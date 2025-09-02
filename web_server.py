@@ -18,7 +18,7 @@ log = logging.getLogger("ssa.web")
 
 load_dotenv()
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "").strip()
-FIREWORKS_MODEL   = os.getenv("FIREWORKS_MODEL", "accounts/SentientAGI/models/Dobby-Mini-Unhinged-Plus-Llama-3.1-8B").strip()
+FIREWORKS_MODEL   = os.getenv("FIREWORKS_MODEL", "accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new").strip()
 NEWS_API_KEY      = os.getenv("NEWS_API_KEY", "").strip()
 
 ROOT = os.path.abspath(os.path.dirname(__file__))

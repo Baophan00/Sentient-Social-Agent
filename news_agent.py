@@ -21,7 +21,7 @@ if not log.handlers:
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "").strip()
 FIREWORKS_MODEL = os.getenv(
     "FIREWORKS_MODEL",
-    "accounts/SentientAGI/models/Dobby-Mini-Unhinged-Plus-Llama-3.1-8B"
+    "accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new"
 ).strip()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
