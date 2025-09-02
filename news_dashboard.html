@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sentient Social Agent — News & Analysis</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0b0e12; --panel:#11161c; --muted:#9aa4af; --text:#e8edf2;
+      --edge:#1a2230; --accent:#16b1a9; --accent-2:#6ee7cf; --card:#0f141a;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;background:radial-gradient(1200px 600px at 70% -10%,#13202a22 0%,transparent 60%),var(--bg);
+      color:var(--text);font:15px/1.5 Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    .wrap{max-width:1280px;margin:0 auto;padding:28px}
+    header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+    .logo{width:36px;height:36px;border-radius:9px;background:conic-gradient(from 220deg,var(--accent),#23b6ea 40%,#b48fff 70%,#ff8fb2);filter:saturate(1.3)}
+    h1{font-size:22px;margin:0}
+    .tag{font-size:12px;padding:4px 8px;border:1px solid #223044;border-radius:999px;color:var(--accent);background:#0c141c}
+    .grid{display:grid;grid-template-columns: 1.2fr 0.8fr; gap:18px}
+    @media (max-width:1024px){.grid{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,var(--panel),#0e1319);border:1px solid var(--edge);border-radius:16px;box-shadow:0 8px 30px #0004;overflow:hidden}
+    .card .hd{padding:14px 16px;border-bottom:1px solid var(--edge);display:flex;align-items:center;justify-content:space-between}
+    .card .hd h2{font-size:15px;margin:0;color:#dbe7f1;letter-spacing:.2px}
+    .card .bd{padding:12px 12px 8px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;padding:0 12px 10px}
+    .tab{padding:6px 10px;border:1px solid var(--edge);border-radius:999px;color:var(--muted);cursor:pointer;user-select:none}
+    .tab.active{color:#0a1416;background:linear-gradient(180deg,var(--accent-2),var(--accent));border-color:transparent;font-weight:600}
+    .news-item{padding:12px;border:1px solid var(--edge);border-radius:12px;background:var(--card);margin:8px 0;display:grid;grid-template-columns:auto 140px;gap:12px}
+    .news-item h3{margin:0 0 6px;font-size:15px;color:#dfe8f5}
+    .news-meta{font-size:12px;color:var(--muted)}
+    .btn{cursor:pointer;border:1px solid var(--edge);background:#0c151c;color:#dff; padding:8px 10px;border-radius:10px}
+    .btn:hover{border-color:#2a3a4a}
+    .btn.accent{border:none;background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#0b1114;font-weight:700}
+    .empty{color:var(--muted);font-style:italic;padding:18px;text-align:center}
+
+    /* Right: Analysis thread */
+    .thread{display:flex;flex-direction:column;gap:10px;max-height:650px;overflow:auto;padding:10px}
+    .bubble{display:flex;gap:10px}
+    .avatar{width:36px;height:36px;flex:0 0 36px;border-radius:50%;background:#123;overflow:hidden}
+    .avatar img{display:block;width:100%;height:100%;object-fit:cover}
+    .bubble .bd{
+      border:1px solid var(--edge);background:#0e141b;border-radius:12px;padding:10px;flex:1
+    }
+    .bubble.user .bd{background:#0b1418;border-color:#18343a}
+    .bubble.assistant .bd{background:#0f131b}
+    .bubble .bd h4{margin:0 0 6px;font-size:14px;color:#cfe7ff}
+    .thread .mono{white-space:pre-wrap;font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo"></div>
+      <h1>Sentient Social Agent</h1>
+      <span class="tag">News · Analysis</span>
+      <span class="tab" id="status-pill">checking…</span>
+    </header>
+
+    <div class="grid">
+      <!-- Left: News -->
+      <div class="col">
+        <div class="card">
+          <div class="hd">
+            <h2>📰 News Feed</h2>
+            <div class="tabs" id="tabs">
+              <div class="tab active" data-cat="">All</div>
+              <div class="tab" data-cat="tech">Tech</div>
+              <div class="tab" data-cat="crypto">Crypto</div>
+              <div class="tab" data-cat="ai">AI</div>
+              <div class="tab" data-cat="finance">Finance</div>
+              <div class="tab" data-cat="general">General</div>
+            </div>
+          </div>
+          <div class="bd" id="news-list"></div>
+        </div>
+      </div>
+
+      <!-- Right: Single thread: Summary + Deep analysis -->
+      <div class="col">
+        <div class="card">
+          <div class="hd"><h2>🧠 Summary & Deep Analysis</h2></div>
+          <div class="bd">
+            <div id="thread" class="thread">
+              <div class="bubble assistant">
+                <div class="avatar"><img src="assets/mascot.png" alt="mascot" /></div>
+                <div class="bd">
+                  <h4>Assistant</h4>
+                  <div class="mono">Click “Summarize” on a news item to get a Fireworks summary + ODS deep analysis (if configured).</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div> <!-- /col -->
+    </div> <!-- /grid -->
+  </div> <!-- /wrap -->
+
+  <script>
+    // ----- DOM helpers -----
+    const $ = (q)=>document.querySelector(q);
+    const statusPill = $("#status-pill");
+    const elNews = $("#news-list");
+    const elThread = $("#thread");
+
+    // Safe HTML escape
+    function escapeHtml(s){
+      return (s||"").replace(/[&<>'"]/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'
+      })[c]);
+    }
+
+    // Base64 helpers (no deprecated escape/unescape)
+    function b64(str){
+      const bytes = new TextEncoder().encode(str);
+      let bin = "";
+      bytes.forEach(b=>bin += String.fromCharCode(b));
+      return btoa(bin);
+    }
+    function ub64(b64str){
+      const bin = atob(b64str);
+      const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+
+    // Mini markdown → HTML (safe-ish)
+    function mdToHtml(md){
+      let h = (md||"")
+        .replace(/^(\s*)- (.*)$/gm,'$1• $2')
+        .replace(/^### (.*)$/gm,'<b>$1</b>')
+        .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+        .replace(/_(.+?)_/g,'<i>$1</i>')
+        .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      h = h.replace(/\n/g,"<br/>");
+      return h;
+    }
+
+    // ----- Status -----
+    async function status(){
+      try{
+        const r = await fetch("/api/status"); const j = await r.json();
+        const ok = j?.status==="ok";
+        const sm = j?.components?.summarization?.available ? "Summ:OK" : "Summ:OFF";
+        const ods = j?.components?.ods?.available ? "ODS:OK" : "ODS:OFF";
+        statusPill.textContent = ok ? `${sm} | ${ods}` : "error";
+        statusPill.style.color = ok ? "#041818" : "#fff";
+        statusPill.style.background = ok
+          ? "linear-gradient(180deg,#8ef6e2,#16b1a9)" : "#5b1a1a";
+      }catch(e){
+        statusPill.textContent = "offline";
+      }
+    }
+    status();
+
+    // ----- News -----
+    let currentCat = "";
+    async function loadNews(){
+      elNews.innerHTML = `<div class="empty">Loading…</div>`;
+      const params = new URLSearchParams({ limit: "30" });
+      if(currentCat) params.set("category", currentCat);
+      const url = `/api/news?${params.toString()}`;
+
+      try{
+        const r = await fetch(url);
+        const j = await r.json();
+        const items = j.articles || [];
+        if(!Array.isArray(items) || !items.length){
+          elNews.innerHTML = `<div class="empty">No items.</div>`;
+          return;
+        }
+        elNews.innerHTML = items.map(a => {
+          const safeTitle = escapeHtml(a.title || "");
+          const safeMeta = `${escapeHtml(a.source||'')} · ${escapeHtml(a.category||'')} · ${escapeHtml(a.published||'')}`;
+          const payload = b64(JSON.stringify({title:a.title||"", summary:a.summary||"", link:a.link||""}));
+          return `
+            <div class="news-item">
+              <div>
+                <h3>${safeTitle}</h3>
+                <div class="news-meta">${safeMeta}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
+                <a class="btn" href="${a.link}" target="_blank" rel="noopener noreferrer">Open</a>
+                <button class="btn accent" data-payload="${payload}">Summarize</button>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        // attach listeners after render
+        elNews.querySelectorAll("button.btn.accent").forEach(btn=>{
+          btn.addEventListener("click", ()=> {
+            const payloadB64 = btn.getAttribute("data-payload");
+            if(payloadB64) summ(payloadB64);
+          });
+        });
+
+      }catch(e){
+        elNews.innerHTML = `<div class="empty">Load failed.</div>`;
+      }
+    }
+
+    document.querySelectorAll(".tab").forEach(tab=>{
+      tab.addEventListener("click", ()=>{
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        tab.classList.add("active");
+        currentCat = tab.dataset.cat || "";
+        loadNews();
+      });
+    });
+
+    // initial load
+    loadNews();
+
+    // ----- Thread helpers -----
+    function pushUser(text){
+      const wrap = document.createElement("div");
+      wrap.className = "bubble user";
+      wrap.innerHTML = `
+        <div class="avatar"><img src="assets/mascot.png" alt="mascot" /></div>
+        <div class="bd"><h4>You</h4><div class="mono">${escapeHtml(text)}</div></div>
+      `;
+      elThread.appendChild(wrap);
+      elThread.scrollTop = elThread.scrollHeight;
+    }
+
+    function pushAssistant(markdown, title="Assistant"){
+      const wrap = document.createElement("div");
+      wrap.className = "bubble assistant";
+      wrap.innerHTML = `
+        <div class="avatar"><img src="assets/mascot.png" alt="mascot" /></div>
+        <div class="bd"><h4>${escapeHtml(title)}</h4><div class="mono">${mdToHtml(markdown)}</div></div>
+      `;
+      elThread.appendChild(wrap);
+      elThread.scrollTop = elThread.scrollHeight;
+    }
+
+    // ----- Single Summarize (Fireworks + ODS deep) -----
+    async function summ(payloadB64){
+      let a;
+      try{
+        a = JSON.parse(ub64(payloadB64));
+      }catch{
+        pushAssistant("Invalid payload.", "Summary + Deep Analysis");
+        return;
+      }
+
+      const title = a.title || "";
+      const summary = a.summary || "";
+      const link = a.link || "";
+
+      pushUser(`Summarize & Analyze:\n${title || link || "(untitled)"}`);
+
+      try{
+        const r = await fetch("/api/summarize", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ title, description: summary, url: link })
+        });
+        const j = await r.json();
+        if(j && j.status === "success"){
+          pushAssistant(j.summary, "Summary + Deep Analysis");
+        }else{
+          pushAssistant("Failed: " + (j?.message || "Unknown error"), "Summary + Deep Analysis");
+        }
+      }catch(e){
+        pushAssistant("Connection error while summarizing.", "Summary + Deep Analysis");
+      }
+    }
+  </script>
+</body>
+</html>
