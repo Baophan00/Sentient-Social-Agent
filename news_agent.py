@@ -1,11 +1,12 @@
 # news_agent.py
 # English-only code. Provides:
 # - SummarizerService: Fireworks-first summary; ODS deep analysis fallback.
-# - (Optional) NewsAgent.get_news(...) kept minimal for compatibility.
+# - Output formatting without markdown headers (#/##/###). Clean "card" layout.
 
 from __future__ import annotations
 
 import os
+import re
 import json
 import logging
 import requests
@@ -35,8 +36,91 @@ JINA_API_KEY = os.getenv("JINA_API_KEY", "").strip()
 # Optional override for ODS model via LiteLLM provider naming
 ODS_MODEL = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
 
+# -----------------------------------------------------------------------------
+# Formatting helpers (no #/##/###)
+# -----------------------------------------------------------------------------
+DIV = "────────────────────────────────"
+BUL = "•"
+
+def _clean_text(s: str) -> str:
+    if not s:
+        return ""
+    # Remove accidental markdown headers
+    s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)
+    # Normalize double newlines
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+def _wrap_section(title: str, body: str) -> str:
+    body = _clean_text(body)
+    if not body:
+        return ""
+    return f"**{title}**\n{body.strip()}"
+
+def _ensure_card(summary_block: str, analysis_block: str, link: str = "") -> str:
+    parts: List[str] = []
+    if summary_block:
+        parts.append(_wrap_section("Summary", summary_block))
+        # Try to ensure a 1-line Impact at the end of summary if missing
+        if "Impact:" not in summary_block and "Impact —" not in summary_block:
+            parts.append("**Impact**\n(impact not provided)")
+    if analysis_block:
+        # Attempt to split common ODS headings and re-label into nice sections
+        text = _clean_text(analysis_block)
+        # Heuristic remap for nicer sections
+        # Replace common headings with bold section titles
+        text = re.sub(r"(?i)^summary\s*:?\s*$", "**Summary**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^deep analysis\s*:?\s*$", "**Deep Analysis**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^(why it matters|why-this-matters)\s*:?\s*$", "**Why it matters**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^risks?\s*:?\s*$", "**Risks**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^opportunit(y|ies)\s*:?\s*$", "**Opportunities**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^(market (impact|view))\s*:?\s*$", "**Market view**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^sources?\s*:?\s*$", "**Sources**", text, flags=re.MULTILINE)
+
+        # Guarantee minimal structure if the model returned a blob
+        if "**Deep Analysis**" not in text:
+            text = f"**Deep Analysis**\n{text}"
+
+        parts.append(text)
+
+    card = f"{DIV}\n" + ("\n\n".join([p for p in parts if p.strip()])) + f"\n\n{DIV}"
+    if link:
+        card += f"\nLink: {link}"
+    return card.strip()
+
+# -----------------------------------------------------------------------------
+# Base prompts
+# -----------------------------------------------------------------------------
 SYSTEM_SUMMARY = (
-    "You are a concise news summarizer. Output clear English with short bullets and a one-line impact."
+    "You are a concise news summarizer. Output clean English in a card layout without markdown headers (#). "
+    "Use short bullets and always include a one-line Impact."
+)
+
+SUMMARY_PROMPT_TEMPLATE = (
+    "Create a compact news card in English. Do NOT use '#', '##', or '###' headers.\n\n"
+    "Sections and rules:\n"
+    "1) Summary: exactly 3 bullets. Start each bullet with '• '. Keep lines short.\n"
+    "2) Impact: one line starting with 'Impact — '.\n"
+    "No extra commentary, no code fences.\n\n"
+    "Title: {title}\n"
+    "Description: {description}\n"
+    "Link: {link}\n"
+)
+
+ODS_ANALYSIS_PROMPT = (
+    "Deeply analyze this news item. If a link is provided, consult it and corroborate with search. "
+    "Return a single clean card with these sections. Do NOT use '#', '##', or '###' headers.\n\n"
+    "Sections and rules:\n"
+    "- Deep Analysis: 3–5 bullets (start with '• '), focus on causes, context, second-order effects.\n"
+    "- Why it matters: 2 bullets (start with '• '), relevance for users/investors/builders.\n"
+    "- Risks: one bullet (start with '• ').\n"
+    "- Opportunities: one bullet (start with '• ').\n"
+    "- Market view: one line starting with 'Market — '.\n"
+    "- Sources: list 1–3 most relevant URLs used or corroborated.\n\n"
+    "Keep it factual, neutral, and compact. No code fences.\n\n"
+    "Title: {title}\n"
+    "Description: {description}\n"
+    "Link: {link}\n"
 )
 
 # -----------------------------------------------------------------------------
@@ -57,18 +141,17 @@ def _fireworks_complete(prompt: str, model: Optional[str] = None) -> str:
             {"role": "system", "content": SYSTEM_SUMMARY},
             {"role": "user",   "content": prompt},
         ],
-        "temperature": 0.3,
+        "temperature": 0.25,
         "max_tokens": 700,
         "stream": False,
     }
 
     r = requests.post(url, headers=headers, json=payload, timeout=60)
-    # If Fireworks returns any non-200 (incl. 404), this will raise and let us fallback.
     r.raise_for_status()
     data = r.json()
     choice = (data.get("choices") or [{}])[0]
     text = (choice.get("message") or {}).get("content", "") or ""
-    return text.strip()
+    return _clean_text(text)
 
 # -----------------------------------------------------------------------------
 # OpenAI fallback (optional)
@@ -87,7 +170,7 @@ def _openai_complete(prompt: str) -> str:
             {"role":"system","content": SYSTEM_SUMMARY},
             {"role":"user",  "content": prompt},
         ],
-        "temperature": 0.4,
+        "temperature": 0.3,
         "max_tokens": 700,
         "stream": False,
     }
@@ -98,7 +181,7 @@ def _openai_complete(prompt: str) -> str:
     obj = r.json()
     ch = (obj.get("choices") or [{}])[0]
     txt = (ch.get("message") or {}).get("content", "") or ""
-    return txt.strip()
+    return _clean_text(txt)
 
 # -----------------------------------------------------------------------------
 # ODS deep analysis (and can provide summary if Fireworks fails completely)
@@ -120,7 +203,6 @@ def _ods_deep_analysis(title: str, description: str, link: str) -> str:
     # Choose provider model for ODS internal LLM via LiteLLM naming
     model_name = ODS_MODEL or "openrouter/google/gemini-2.0-flash-001"
 
-    # Prefer Serper; otherwise use SearXNG if provided
     kwargs = {"model_name": model_name, "reranker": reranker}
     if SEARXNG_INSTANCE_URL:
         kwargs.update({"search_provider": "searxng", "searxng_instance_url": SEARXNG_INSTANCE_URL})
@@ -128,7 +210,6 @@ def _ods_deep_analysis(title: str, description: str, link: str) -> str:
             kwargs["searxng_api_key"] = SEARXNG_API_KEY
 
     tool = OpenDeepSearchTool(**kwargs)
-    # Some builds expose is_initialized flag
     if getattr(tool, "is_initialized", True) is False:
         try:
             tool.setup()
@@ -136,20 +217,19 @@ def _ods_deep_analysis(title: str, description: str, link: str) -> str:
             log.warning("ODS setup failed: %s", e)
             return ""
 
-    query = (
-        "Deeply analyze this news item. If a link is provided, use it and corroborate with search; "
-        "otherwise rely on known context. Output:\n"
-        "• 3–5 key takeaways\n"
-        "• 1 risk, 1 opportunity\n"
-        "• 1-sentence market impact\n\n"
-        f"Title: {title}\n"
-        f"Description: {description}\n"
-        f"Link: {link}\n"
-    )
+    query = ODS_ANALYSIS_PROMPT.format(title=title, description=description, link=link)
 
     try:
+        # You can expose depth knobs by adding kwargs like: pro_mode=True, top_k=8, max_docs=12
         res = tool.forward(query)
-        return (str(res) if res is not None else "").strip()
+#         res = tool.forward(
+#             query,
+#             pro_mode=True,   # bật phân tích chuyên sâu
+#             top_k=2,         # lấy 8 nguồn quan trọng nhất
+#             max_docs=3     # đọc tối đa 12 tài liệu
+# )
+
+        return _clean_text(str(res) if res is not None else "")
     except Exception as e:
         log.warning("ODS forward failed: %s", e)
         return ""
@@ -160,57 +240,47 @@ def _ods_deep_analysis(title: str, description: str, link: str) -> str:
 class SummarizerService:
     """
     Fireworks-first short summary; ODS deep analysis added or used as fallback.
+    Output is a single card layout without markdown headers.
     """
 
     def __init__(self, fireworks_model: Optional[str] = None):
         self.fireworks_model = (fireworks_model or FIREWORKS_MODEL).strip()
 
     def summarize_and_analyze(self, title: str, description: str, link: str) -> str:
-        # 1) Summary with Fireworks
-        summary_prompt = (
-            "Summarize in English using exactly 3 bullets, then a one-line Impact.\n\n"
-            f"Title: {title}\n"
-            f"Description: {description}\n"
-            f"Link: {link}\n"
-        )
-        summary_md = ""
+        # 1) Summary (Fireworks first)
+        summary_prompt = SUMMARY_PROMPT_TEMPLATE.format(title=title, description=description, link=link)
+        summary_block = ""
         try:
             txt = _fireworks_complete(summary_prompt, model=self.fireworks_model)
             if txt:
-                summary_md = "### Summary\n" + txt.strip()
+                # Ensure bullets and single Impact line
+                summary_block = _clean_text(txt)
         except requests.HTTPError as e:
-            # This is the case you hit: 404 must not kill the flow.
             log.warning("Fireworks HTTP error (summary): %s", e)
         except Exception as e:
             log.warning("Fireworks error (summary): %s", e)
 
         # 2) Deep analysis with ODS (if available)
-        deep_md = ""
+        analysis_block = ""
         try:
             ods_text = _ods_deep_analysis(title, description, link)
             if ods_text:
-                deep_md = "### Deep Analysis\n" + ods_text
+                analysis_block = ods_text
         except Exception as e:
             log.warning("Deep analysis (ODS) error: %s", e)
 
         # 3) If no summary at all, try OpenAI fallback for the summary
-        if not summary_md:
+        if not summary_block:
             oa = _openai_complete(summary_prompt)
             if oa:
-                summary_md = "### Summary\n" + oa
+                summary_block = oa
 
-        # 4) Final assembly
-        if not summary_md and not deep_md:
+        # 4) Assemble into a single card
+        if not summary_block and not analysis_block:
             # Nothing worked
             raise RuntimeError("No summarizer/analyzer available")
 
-        parts = []
-        if summary_md:
-            parts.append(summary_md)
-        if deep_md:
-            parts.append(deep_md)
-
-        return "\n\n".join(parts)
+        return _ensure_card(summary_block, analysis_block, link=link)
 
 
 # (Optional) Keep a minimal NewsAgent stub for compatibility (not used by SSA fetch)
@@ -221,7 +291,6 @@ class NewsAgent:
 
     # Placeholder to keep old imports happy if used
     def get_news(self, feeds: List[str], limit: int = 20) -> List[dict]:
-        # You are using SSA for fetching; this is not needed. Kept as stub.
         return []
 
     def summarize(self, title: str, description: str, link: str) -> str:
