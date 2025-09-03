@@ -23,7 +23,7 @@
     h1{font-size:22px;margin:0}
     .pill{font-size:11px;padding:4px 8px;border:1px solid var(--edge);border-radius:999px;color:#cfe8ff;background:#0a141c}
 
-    /* --- 2-column layout --- */
+    /* layout */
     .layout{
       display:grid;
       grid-template-columns: 1.15fr 0.85fr;
@@ -47,24 +47,19 @@
     .card .hd h2{font-size:15px;margin:0;color:#dbe7f1;letter-spacing:.2px}
     .card .bd{padding:12px}
 
-    /* Left column: force independent scroll area */
     .news-wrap{display:flex;flex-direction:column;gap:18px}
-    .news-card{ }
     .tabs{display:flex;gap:8px;flex-wrap:wrap;padding:0 12px 10px}
     .tab{padding:6px 10px;border:1px solid var(--edge);border-radius:999px;color:#9aa4af;cursor:pointer;user-select:none}
     .tab.active{color:#0a1416;background:linear-gradient(180deg,var(--accent-2),var(--accent));border-color:transparent;font-weight:600}
 
-    /* Đây là phần quan trọng: cố định chiều cao để bật scrollbar riêng */
+    /* Kéo dài vùng cuộn bên trái */
     .news-scroll{
       padding:12px;
-      max-height: calc(100vh - 200px); /* header + margins -> tùy chỉnh nếu muốn */
-      overflow:auto;                   /* luôn hiển thị thanh cuộn khi dài */
+      max-height: calc(100vh - 140px);
+      overflow:auto;
     }
     @media (max-width:1024px){
-      .news-scroll{
-        max-height: none;   /* mobile: để trình duyệt cuộn trang tổng thể */
-        overflow: visible;
-      }
+      .news-scroll{ max-height:none; overflow:visible; }
     }
 
     .news-item{
@@ -77,16 +72,23 @@
     .btn:hover{border-color:#2a3a4a}
     .btn.accent{border:none;background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#0b1114;font-weight:700}
 
-    /* Right column: sticky summary card */
-    .col-summary .card{
-      position: sticky;
-      top: 10px;
-    }
+    .col-summary .card{ position: sticky; top: 10px; }
     .summary-box{display:flex;gap:12px;align-items:flex-start}
     .mascot{width:44px;height:44px;border-radius:12px;background:#0c141c;border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto}
     .mascot img{width:100%;height:100%;object-fit:cover}
     .summary-content{white-space:pre-wrap;font-size:14px;color:#eaf7f5;flex:1;min-height:120px}
     .empty{color:#9aa4af;font-style:italic}
+
+    .cta-row{margin-top:10px;display:flex;gap:8px}
+
+    /* status line cho Deep Analysis */
+    .status-line{
+      margin-top:10px;
+      font-size:13px;
+      color:var(--muted);
+      font-style:italic;
+      user-select:none;
+    }
   </style>
 </head>
 <body>
@@ -98,33 +100,37 @@
     </header>
 
     <div class="layout">
-      <!-- Left: News with independent scroll -->
+      <!-- Left -->
       <div class="news-wrap">
         <div class="card news-card">
           <div class="hd">
             <h2>📰 News Feed</h2>
             <div class="tabs" id="tabs">
               <div class="tab active" data-cat="">All</div>
-              <div class="tab" data-cat="technology">Tech</div>
+              <div class="tab" data-cat="tech">Tech</div>
               <div class="tab" data-cat="crypto">Crypto</div>
-              <div class="tab" data-cat="business">Business</div>
-              <div class="tab" data-cat="general">General</div>
+              <div class="tab" data-cat="finance">Finance</div>
+              <div class="tab" data-cat="ai">AI</div>
             </div>
           </div>
           <div class="news-scroll" id="news-list"></div>
         </div>
       </div>
 
-      <!-- Right: Summary (sticky) -->
+      <!-- Right -->
       <div class="col-summary">
         <div class="card">
-          <div class="hd">
-            <h2>🧠 Summary & Analysis</h2>
-          </div>
+          <div class="hd"><h2>🧠 Summary & Analysis</h2></div>
           <div class="bd">
             <div class="summary-box">
               <div class="mascot"><img src="assets/mascot.png" alt="mascot" /></div>
-              <div id="summary" class="summary-content empty">Pick a news item and click “Summarize”.</div>
+              <div style="flex:1">
+                <div id="summary" class="summary-content empty">Pick a news item and click “Summarize”.</div>
+                <div class="cta-row" id="deep-row" style="display:none">
+                  <button id="btn-deep" class="btn">🔎 Deep Analysis</button>
+                </div>
+                <div id="deep-status" class="status-line" style="display:none"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -136,10 +142,35 @@
     const $ = (q) => document.querySelector(q);
     const elNews = $("#news-list");
     const elSummary = $("#summary");
+    const elDeepRow = $("#deep-row");
+    const btnDeep = $("#btn-deep");
+    const elDeepStatus = $("#deep-status");
     const statusPill = $("#status-pill");
 
-    // Abort controller để tóm tắt lần sau hủy request cũ
+    let currentArticle = null;
     let summarizeController = null;
+    let sseSource = null;
+    let spinnerTimer = null;
+
+    function startSpinner(label){
+      stopSpinner();
+      let dots = 0;
+      elDeepStatus.textContent = label + "…";
+      elDeepStatus.style.display = "block";
+      spinnerTimer = setInterval(()=>{
+        dots = (dots+1)%4;
+        elDeepStatus.textContent = label + ".".repeat(dots);
+      }, 400);
+    }
+    function updateSpinner(label){
+      if(elDeepStatus.style.display !== "block") elDeepStatus.style.display = "block";
+      elDeepStatus.textContent = label + "…";
+    }
+    function stopSpinner(){
+      if (spinnerTimer){ clearInterval(spinnerTimer); spinnerTimer = null; }
+      elDeepStatus.style.display = "none";
+      elDeepStatus.textContent = "";
+    }
 
     async function status(){
       try{
@@ -192,10 +223,19 @@
     });
     loadNews();
 
-    // ------- Summarize: luôn thay thế nội dung cũ và abort request trước đó --------
+    // ------- Summarize (Fireworks only) --------
     async function summ(payloadB64){
       const a = JSON.parse(ub64(payloadB64));
+      currentArticle = a;
 
+      // đóng SSE cũ + spinner cũ
+      try { sseSource?.close(); } catch {}
+      stopSpinner();
+
+      // hủy deep-row trạng thái & ẩn nút deep (sẽ hiện lại sau khi tóm tắt xong)
+      elDeepRow.style.display = "none";
+
+      // abort summarize trước đó
       try { summarizeController?.abort(); } catch {}
       summarizeController = new AbortController();
 
@@ -212,6 +252,8 @@
         const j = await r.json();
         if(j.status==="success"){
           elSummary.innerHTML = mdToHtml(j.summary);
+          // sau khi có summary: hiện nút Deep Analysis để user bấm
+          elDeepRow.style.display = "flex";
         }else{
           elSummary.textContent = "Failed: " + (j.message||"");
         }
@@ -220,6 +262,60 @@
         elSummary.textContent = "Connection error while summarizing.";
       }
     }
+
+    // ------- Deep Analysis (SSE; đè kết quả lên summary) --------
+    btnDeep.onclick = ()=>{
+      if (!currentArticle) return;
+
+      // Ẩn nút để tránh bấm lại trong lúc chạy
+      elDeepRow.style.display = "none";
+
+      // Bật status + spinner
+      startSpinner("Preparing");
+
+      // đóng SSE cũ nếu có
+      try { sseSource?.close(); } catch {}
+      const params = new URLSearchParams({
+        title: currentArticle.title || "",
+        description: currentArticle.summary || "",
+        url: currentArticle.link || ""
+      });
+      sseSource = new EventSource(`/api/deep_analyze_sse?${params.toString()}`);
+
+      sseSource.onmessage = (e)=>{
+        try{
+          const msg = JSON.parse(e.data || "{}");
+          if(msg.type === "stage"){
+            // map stage -> label gọn
+            const stage = (msg.stage||"").toLowerCase();
+            if (stage === "init")              updateSpinner("Preparing");
+            else if (stage === "search_provider") updateSpinner("Searching");
+            else if (stage === "reranker")       updateSpinner("Reranking");
+            else if (stage === "llm_provider")   updateSpinner("Synthesizing analysis");
+            else updateSpinner("Working");
+          }else if(msg.type === "done"){
+            stopSpinner();
+            // Đè kết quả phân tích lên phần tóm tắt
+            elSummary.innerHTML = mdToHtml(msg.analysis || "No analysis.");
+            // nút deep vẫn ẩn cho bài này; khi tóm tắt bài khác sẽ hiện lại
+            try { sseSource?.close(); } catch {}
+          }else if(msg.type === "error"){
+            stopSpinner();
+            elSummary.innerHTML += `<br/><span style="color:#f88">Deep Analysis failed: ${escapeHtml(msg.message||"")}</span>`;
+            try { sseSource?.close(); } catch {}
+            // Cho phép bấm lại nếu muốn
+            elDeepRow.style.display = "flex";
+          }
+        }catch{}
+      };
+      sseSource.onerror = ()=>{
+        stopSpinner();
+        elSummary.innerHTML += `<br/><span style="color:#f88">Deep Analysis connection error.</span>`;
+        try { sseSource?.close(); } catch {}
+        // Cho phép bấm lại
+        elDeepRow.style.display = "flex";
+      };
+    };
 
     function mdToHtml(md){
       let h = (md||"")
