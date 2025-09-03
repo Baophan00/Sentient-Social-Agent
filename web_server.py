@@ -13,11 +13,13 @@ load_dotenv()
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "").strip()
 FIREWORKS_MODEL   = os.getenv("FIREWORKS_MODEL", "accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new").strip()
 NEWS_API_KEY      = os.getenv("NEWS_API_KEY", "").strip()
-SERPER_API_KEY    = os.getenv("SERPER_API_KEY", "").strip()
-SEARXNG_INSTANCE_URL = os.getenv("SEARXNG_INSTANCE_URL", "").strip()
-SEARXNG_API_KEY   = os.getenv("SEARXNG_API_KEY", "").strip()
-JINA_API_KEY      = os.getenv("JINA_API_KEY", "").strip()
-ODS_MODEL         = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
+
+# ODS / search stack env
+SERPER_API_KEY        = os.getenv("SERPER_API_KEY", "").strip()
+SEARXNG_INSTANCE_URL  = os.getenv("SEARXNG_INSTANCE_URL", "").strip()
+SEARXNG_API_KEY       = os.getenv("SEARXNG_API_KEY", "").strip()
+JINA_API_KEY          = os.getenv("JINA_API_KEY", "").strip()
+ODS_MODEL             = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 SRC_PATH = os.path.join(ROOT, "src")
@@ -71,6 +73,7 @@ if SummarizerService is not None:
     except Exception as e:
         log.error("Summarizer init failed: %s", e)
 
+# ---------------- Utils ----------------
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
@@ -97,21 +100,28 @@ def _serialize_articles(articles: List[dict]) -> List[dict]:
         })
     return out
 
-def _sse(data: Any) -> str:
+def _sse(payload: Any) -> str:
     try:
-        return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
     except Exception as e:
         log.error("SSE JSON error: %s", e)
         return "data: {\"type\":\"error\",\"name\":\"SERIALIZATION\"}\n\n"
 
+# --------------- Routes ----------------
 @app.route("/")
 def root():
     return send_from_directory(".", "news_dashboard.html")
 
 # ---------- News ----------
 def _normalize_category(cat: str) -> str:
-    m = {"":"", "all":"", "technology":"tech", "tech":"tech", "crypto":"crypto",
-         "business":"finance", "finance":"finance", "ai":"ai", "general":"general"}
+    m = {
+        "": "", "all": "",
+        "technology": "tech", "tech": "tech",
+        "crypto": "crypto",
+        "business": "finance", "finance": "finance",
+        "ai": "ai",
+        "general": "general"
+    }
     return m.get((cat or "").lower(), (cat or "").lower())
 
 @app.route("/api/news")
@@ -148,13 +158,14 @@ def api_summarize():
         return jsonify({"status":"error","message":"title/description/link required"}), 400
 
     try:
-        md = summarizer.summarize_only(title, desc, link)  # ✅ chỉ tóm tắt
+        # ✅ chỉ tóm tắt (Fireworks/OpenAI)
+        md = summarizer.summarize_only(title, desc, link)
         return jsonify({"status":"success","summary": md})
     except Exception as e:
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
-# ---------- Deep Analysis (SSE) ----------
+# ---------- Deep Analysis (SSE, ODS on-demand) ----------
 @app.route("/api/deep_analyze_sse")
 def api_deep_analyze_sse():
     title = str(request.args.get("title","")).strip()
@@ -162,34 +173,32 @@ def api_deep_analyze_sse():
     link  = str(request.args.get("url","")).strip()
 
     def stream():
-        # Show pipeline steps
-        yield _sse({"type":"stage","stage":"init","detail":"Starting ODS deep analysis"})
+        # Stage 1: init
+        yield _sse({"type":"stage","stage":"init","detail":"Preparing…"})
 
-        # ODS availability
+        # ODS availability check
         if not ODS_AVAILABLE:
             yield _sse({"type":"error","message":"ODS not installed (torch missing)."})
             return
 
-        # Providers
+        # Stage 2: searching…
         if SEARXNG_INSTANCE_URL:
-            yield _sse({"type":"stage","stage":"search_provider","detail":f"searxng → {SEARXNG_INSTANCE_URL}"})
+            yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
         else:
-            provider = "serper" if SERPER_API_KEY else "default-serp"
-            yield _sse({"type":"stage","stage":"search_provider","detail":provider})
+            # serper hoặc default-serp
+            _prov = "Searching…"  # nhãn ngắn, frontend sẽ tự hiển thị “Searching…”
+            yield _sse({"type":"stage","stage":"search_provider","detail":_prov})
 
-        reranker = "jina" if JINA_API_KEY else "infinity"
-        yield _sse({"type":"stage","stage":"reranker","detail":reranker})
+        # Stage 3: reranking…
+        _rer = "Reranking…"
+        yield _sse({"type":"stage","stage":"reranker","detail":_rer})
 
-        # LLM provider guess from model id
-        if "/" in ODS_MODEL:
-            provider_hint = ODS_MODEL.split("/",1)[0]
-        else:
-            provider_hint = "openrouter"
-        yield _sse({"type":"stage","stage":"llm_provider","detail":f"{provider_hint} ({ODS_MODEL})"})
+        # Stage 4: synthesizing (LLM)
+        _llm = "Synthesizing analysis…"
+        yield _sse({"type":"stage","stage":"llm_provider","detail":_llm})
 
-        # run
+        # Run deep analysis
         try:
-            # dùng service để gom format card
             if summarizer is None:
                 raise RuntimeError("Analyzer unavailable")
             result = summarizer.deep_analyze_only(title, desc, link)
@@ -199,7 +208,7 @@ def api_deep_analyze_sse():
 
     return Response(stream(), mimetype="text/event-stream", headers={
         "Cache-Control":"no-cache",
-        "X-Accel-Buffering":"no"  # để nginx (nếu có) không buffer
+        "X-Accel-Buffering":"no"
     })
 
 # ---------- Status ----------
@@ -223,6 +232,7 @@ def api_status():
 
 @app.errorhandler(404)
 def nf(_): return jsonify({"status":"error","message":"Endpoint not found"}), 404
+
 @app.errorhandler(500)
 def ie(_): return jsonify({"status":"error","message":"Internal server error"}), 500
 
