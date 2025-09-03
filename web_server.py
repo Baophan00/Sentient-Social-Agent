@@ -1,6 +1,6 @@
 # web_server.py
 import os, sys, json, logging
-from typing import List, Any
+from typing import List, Any, Optional
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
@@ -26,15 +26,17 @@ SRC_PATH = os.path.join(ROOT, "src")
 if os.path.isdir(SRC_PATH) and SRC_PATH not in sys.path:
     sys.path.append(SRC_PATH)
 
-# ---- SSA News (optional) ----
+# ---- SSA News tool ----
 SSA_News = None
 try:
+    # Nếu package __init__ đã export News thì dòng này OK
+    # Nếu không, đổi thành: from src.agent.agent_tools.news.news import News as SSA_News
     from src.agent.agent_tools.news import News as SSA_News  # type: ignore
     log.info("SSA News available.")
 except Exception as e:
     log.warning("SSA News not found: %s", e)
 
-# ---- Summarizer service (ours) ----
+# ---- Summarizer service (yours) ----
 SummarizerService = None
 try:
     from news_agent import SummarizerService  # type: ignore
@@ -42,7 +44,7 @@ try:
 except Exception as e:
     log.error("Failed to import SummarizerService: %s", e)
 
-# ODS probe
+# ODS availability
 ODS_AVAILABLE = False
 try:
     import opendeepsearch  # type: ignore
@@ -114,6 +116,7 @@ def root():
 
 # ---------- News ----------
 def _normalize_category(cat: str) -> str:
+    # mapping tên tab -> category nội bộ của tool
     m = {
         "": "", "all": "",
         "technology": "tech", "tech": "tech",
@@ -124,19 +127,53 @@ def _normalize_category(cat: str) -> str:
     }
     return m.get((cat or "").lower(), (cat or "").lower())
 
+def _filter_locally(items: List[dict], category: str) -> List[dict]:
+    """Fallback nếu tool không có get_latest_news(category=...)"""
+    if not category:
+        return items
+    out = []
+    cat = category.lower()
+    for a in items:
+        a_cat = str(a.get("category","")).lower()
+        if a_cat == cat:
+            out.append(a)
+    return out
+
 @app.route("/api/news")
 def api_news():
     if not news_agent:
         return jsonify({"status":"error","message":"News service unavailable"}), 503
+
     raw_cat = request.args.get("category","").strip()
     category = _normalize_category(raw_cat)
-    limit = min(int(request.args.get("limit", 50)), 100)
+    limit = min(max(int(request.args.get("limit", 50)), 1), 100)
+
     try:
-        if category:
-            arts = news_agent.fetch_rss_news(category, max_articles=limit)  # type: ignore
+        # Ưu tiên: dùng API mới get_latest_news(max_total, category=...)
+        if hasattr(news_agent, "get_latest_news"):
+            try:
+                arts = news_agent.get_latest_news(max_total=limit, category=category)  # type: ignore
+            except TypeError:
+                # nếu bản tool cũ chưa có tham số category
+                arts = news_agent.get_latest_news(max_total=limit)  # type: ignore
+                if category:
+                    arts = _filter_locally(arts, category)
         else:
-            arts = news_agent.get_latest_news(max_total=limit)  # type: ignore
+            # Tool rất cũ: có fetch_rss_news(category, max_articles)
+            if category:
+                arts = news_agent.fetch_rss_news(category, max_articles=limit)  # type: ignore
+            else:
+                # không có API mới thì gom từng category phổ biến
+                merged: List[dict] = []
+                for c in ["ai","tech","crypto","finance","general"]:
+                    try:
+                        merged.extend(news_agent.fetch_rss_news(c, max_articles=limit//3 or 1))  # type: ignore
+                    except Exception:
+                        pass
+                arts = merged[:limit]
+
         return jsonify({"status":"success","source":"ssa","articles": _serialize_articles(arts)})
+
     except Exception as e:
         log.error("/api/news error: %s", e, exc_info=True)
         return jsonify({"status":"error","message":str(e)}), 500
@@ -158,7 +195,6 @@ def api_summarize():
         return jsonify({"status":"error","message":"title/description/link required"}), 400
 
     try:
-        # ✅ chỉ tóm tắt (Fireworks/OpenAI)
         md = summarizer.summarize_only(title, desc, link)
         return jsonify({"status":"success","summary": md})
     except Exception as e:
@@ -175,29 +211,19 @@ def api_deep_analyze_sse():
     def stream():
         # Stage 1: init
         yield _sse({"type":"stage","stage":"init","detail":"Preparing…"})
-
-        # ODS availability check
         if not ODS_AVAILABLE:
             yield _sse({"type":"error","message":"ODS not installed (torch missing)."})
             return
-
         # Stage 2: searching…
         if SEARXNG_INSTANCE_URL:
             yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
         else:
-            # serper hoặc default-serp
-            _prov = "Searching…"  # nhãn ngắn, frontend sẽ tự hiển thị “Searching…”
-            yield _sse({"type":"stage","stage":"search_provider","detail":_prov})
-
+            yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
         # Stage 3: reranking…
-        _rer = "Reranking…"
-        yield _sse({"type":"stage","stage":"reranker","detail":_rer})
-
+        yield _sse({"type":"stage","stage":"reranker","detail":"Reranking…"})
         # Stage 4: synthesizing (LLM)
-        _llm = "Synthesizing analysis…"
-        yield _sse({"type":"stage","stage":"llm_provider","detail":_llm})
+        yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing analysis…"})
 
-        # Run deep analysis
         try:
             if summarizer is None:
                 raise RuntimeError("Analyzer unavailable")
@@ -217,7 +243,7 @@ def api_status():
     return jsonify({
         "status": "ok",
         "timestamp": _now_iso(),
-        "version": "2.3",
+        "version": "2.4",
         "components": {
             "fireworks_model": FIREWORKS_MODEL,
             "model_configured": bool(FIREWORKS_API_KEY),
@@ -239,4 +265,3 @@ def ie(_): return jsonify({"status":"error","message":"Internal server error"}),
 if __name__ == "__main__":
     log.info("Starting server at http://localhost:3000 | model=%s", FIREWORKS_MODEL)
     app.run(host="0.0.0.0", port=int(os.getenv("PORT","3000")), debug=False, threaded=True)
-
