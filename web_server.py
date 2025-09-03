@@ -239,3 +239,4 @@ def ie(_): return jsonify({"status":"error","message":"Internal server error"}),
 if __name__ == "__main__":
     log.info("Starting server at http://localhost:3000 | model=%s", FIREWORKS_MODEL)
     app.run(host="0.0.0.0", port=int(os.getenv("PORT","3000")), debug=False, threaded=True)
+

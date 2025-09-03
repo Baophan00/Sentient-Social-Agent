@@ -43,14 +43,14 @@ def _ensure_card(summary_block: str, analysis_block: str, link: str = "") -> str
     if analysis_block:
         text = _clean_text(analysis_block)
         text = re.sub(r"(?i)^summary\s*:?\s*$", "**Summary**", text, flags=re.MULTILINE)
-        text = re.sub(r"(?i)^deep analysis\s*:?\s*$", "**Deep Analysis**", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^deep analysis\s*:?\s*$", "**Summary**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^(why it matters|why-this-matters)\s*:?\s*$", "**Why it matters**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^risks?\s*:?\s*$", "**Risks**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^opportunit(y|ies)\s*:?\s*$", "**Opportunities**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^(market (impact|view))\s*:?\s*$", "**Market view**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^sources?\s*:?\s*$", "**Sources**", text, flags=re.MULTILINE)
-        if "**Deep Analysis**" not in text:
-            text = f"**Deep Analysis**\n{text}"
+        # if "**Deep Analysis**" not in text:
+        #     text = f"**Summary**\n{text}"
         parts.append(text)
 
     card_body = "\n\n".join([p for p in parts if p.strip()])
@@ -86,7 +86,7 @@ ODS_ANALYSIS_PROMPT = (
     "Deeply analyze this news item. If a link is provided, consult it and corroborate with search. "
     "Return a single clean card with these sections. Do NOT use '#', '##', or '###' headers.\n\n"
     "Sections and rules:\n"
-    "- Deep Analysis: 3–5 bullets (start with '• '), focus on causes, context, second-order effects.\n"
+    "- Summary: 3–5 bullets (start with '• '), focus on causes, context, second-order effects.\n"
     "- Why it matters: 2 bullets (start with '• '), relevance for users/investors/builders.\n"
     "- Risks: one bullet (start with '• ').\n"
     "- Opportunities: one bullet (start with '• ').\n"
