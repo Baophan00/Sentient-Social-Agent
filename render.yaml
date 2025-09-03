@@ -1,7 +1,36 @@
 services:
   - type: web
-    name: Dobby News Agent
+    name: ssa-news-web
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python web_server.py
-    plan: free
+    startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: FIREWORKS_API_KEY
+        sync: false
+      - key: TWITTER_API_KEY
+        sync: false
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_SECRET
+        sync: false
+
+  - type: worker
+    name: ssa-news-worker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python news_runner.py --loop --max-posts 1
+    envVars:
+      - key: FIREWORKS_API_KEY
+        sync: false
+      - key: TWITTER_API_KEY
+        sync: false
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_SECRET
+        sync: false

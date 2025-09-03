@@ -1,99 +1,141 @@
-
 #!/usr/bin/env python3
+# news_runner.py
 import os
-import sys
 import time
-import argparse
 import logging
+import argparse
 from datetime import datetime, timezone
-from dotenv import load_dotenv
-from src.agent.agent_tools.news.news import News
 
-def build_llm():
-    load_dotenv()
+from dotenv import load_dotenv
+
+# ---- Logging ----
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+log = logging.getLogger("ssa.news_runner")
+
+# ---- Load .env (local). Trên Render bạn set ENV trong dashboard nên không cần .env ----
+load_dotenv()
+
+# ---- Optional LLM: Fireworks (OpenAI-compatible) / OpenAI ----
+def build_model():
+    """
+    Trả về client OpenAI-compatible nếu có key, ngược lại trả về None.
+    - Ưu tiên FIREWORKS_API_KEY với BASE_URL fireworks.
+    - Nếu không, dùng OPENAI_API_KEY (OpenAI chuẩn).
+    """
     try:
         from openai import OpenAI
     except Exception:
-        OpenAI = None
+        log.warning("[LLM] openai package not available. Proceeding without LLM.")
+        return None
 
-    fw_key = os.getenv("FIREWORKS_API_KEY")
-    if fw_key and OpenAI:
-        base_url = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1")
-        model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-v3p1-8b-instruct")
-        class FireworksWrapper:
-            def __init__(self):
-                self.client = OpenAI(api_key=fw_key, base_url=base_url)
-                self.model = model
-            def query(self, prompt: str) -> str:
-                r = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role":"user","content":prompt}],
-                    temperature=0.5, max_tokens=120
-                )
-                return (r.choices[0].message.content or "").strip()
-        logging.info("[LLM] Fireworks via OpenAI-compatible")
-        return FireworksWrapper()
+    fw_key = os.getenv("FIREWORKS_API_KEY", "").strip()
+    oa_key = os.getenv("OPENAI_API_KEY", "").strip()
 
-    oa_key = os.getenv("OPENAI_API_KEY")
-    if oa_key and OpenAI:
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        class OpenAIWrapper:
-            def __init__(self):
-                self.client = OpenAI(api_key=oa_key)
-                self.model = model
-            def query(self, prompt: str) -> str:
-                r = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role":"user","content":prompt}],
-                    temperature=0.7, max_tokens=120
-                )
-                return (r.choices[0].message.content or "").strip()
-        logging.info("[LLM] OpenAI")
-        return OpenAIWrapper()
+    if fw_key:
+        base_url = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1").strip()
+        log.info("[LLM] Fireworks via OpenAI-compatible")
+        return OpenAI(api_key=fw_key, base_url=base_url)
 
-    logging.info("[LLM] No API key -> fallback title+link")
+    if oa_key:
+        log.info("[LLM] OpenAI client")
+        return OpenAI(api_key=oa_key)
+
+    log.info("[LLM] No API key found. Running without LLM summarization.")
     return None
 
-def run_once(max_posts: int, fetch_total: int):
-    model = build_llm()
-    news = News(model=model)
-    ranked = news.get_latest_news(max_total=fetch_total)
-    posted = news._post_batch(ranked, max_posts=max_posts)
-    print(f"INFO: Done. Posted {posted} tweet(s) at {datetime.now(timezone.utc).isoformat()}.")
 
-def run_loop(max_posts: int, fetch_total: int):
-    # loop logic nằm trong News.run (đọc NEWS_UPDATE_INTERVAL)
-    model = build_llm()
-    news = News(model=model)
-    # ép lại max mỗi vòng nếu muốn
-    os.environ["NEWS_MAX_ARTICLES_PER_UPDATE"] = str(max_posts)
-    # fetch_total được dùng nội bộ trong run qua _fetch_all (max_total tính toán)
-    news.run()
+def build_news(model):
+    """
+    Tạo instance News tool theo khung Sentient-Social-Agent.
+    """
+    # Import động để tránh lỗi đường dẫn khi chạy từ root
+    try:
+        # Nếu __init__.py đã export News
+        from src.agent.agent_tools.news import News
+    except Exception:
+        # Fallback import trực tiếp module
+        from src.agent.agent_tools.news.news import News  # type: ignore
+
+    secrets = {
+        "FIREWORKS_API_KEY": os.getenv("FIREWORKS_API_KEY", "").strip(),
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", "").strip(),
+    }
+
+    news = News(secrets=secrets, model=model)
+    # Log cấu hình chính để dễ debug
+    try:
+        cats = getattr(news, "categories", None)
+        interval = getattr(news, "update_interval", None)
+        auto_post = getattr(news, "auto_post", None)
+        max_per_update = getattr(news, "max_per_update", None)
+        logging.info(
+            "[NEWS] Initialized. Categories=%s, interval=%ss, auto_post=%s, max_per_update=%s",
+            cats, interval, auto_post, max_per_update
+        )
+    except Exception:
+        pass
+    return news
+
+
+def run_once(max_posts: int, fetch_total: int):
+    """
+    Chạy một vòng:
+    - fetch tất cả bài theo cấu hình trong News
+    - chấm điểm / xếp hạng
+    - đăng tối đa 'max_posts' bài
+    """
+    model = build_model()
+    news = build_news(model=model)
+
+    # Dùng các API nội bộ của News mà bạn đang có
+    raw = news._fetch_all(max_total=fetch_total)
+    if not raw:
+        log.info("No articles fetched.")
+        return 0
+
+    ranked = news._score_items(raw)
+    posted = news._post_batch(ranked, max_posts=max_posts)
+    log.info("Done. Posted %d tweet(s) at %s.", posted, datetime.now(timezone.utc).isoformat())
+    return posted
+
 
 def main():
-    logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
-    load_dotenv()
+    parser = argparse.ArgumentParser(description="Run news poster (one-shot or loop).")
+    parser.add_argument("--once", action="store_true", help="Run exactly one cycle and exit.")
+    parser.add_argument("--loop", action="store_true", help="Run forever with sleep between cycles.")
+    parser.add_argument("--max-posts", type=int, default=int(os.getenv("NEWS_MAX_ARTICLES_PER_UPDATE", "1")),
+                        help="Max number of tweets per cycle.")
+    parser.add_argument("--fetch-total", type=int, default=int(os.getenv("NEWS_FETCH_MAX_TOTAL", "40")),
+                        help="Max number of articles to fetch per cycle before ranking.")
+    parser.add_argument("--interval", type=int, default=int(os.getenv("NEWS_UPDATE_INTERVAL", "600")),
+                        help="Sleep seconds between cycles when --loop (default from NEWS_UPDATE_INTERVAL).")
+    args = parser.parse_args()
 
-    p = argparse.ArgumentParser()
-    p.add_argument("--once", action="store_true", help="Chạy 1 vòng rồi thoát")
-    p.add_argument("--loop", action="store_true", help="Chạy liên tục theo interval")
-    p.add_argument("--max-posts", type=int, default=int(os.getenv("NEWS_MAX_ARTICLES_PER_UPDATE", "1")))
-    p.add_argument("--fetch-total", type=int, default=int(os.getenv("NEWS_FETCH_MAX_TOTAL", "40")))
-    args = p.parse_args()
+    if not (args.once or args.loop):
+        # Mặc định chạy một lần cho đơn giản
+        args.once = True
 
     if args.once:
-        run_once(max_posts=args.max_posts, fetch_total=args.fetch_total)
-    elif args.loop:
-        run_loop(max_posts=args.max_posts, fetch_total=args.fetch_total)
-    else:
-        p.print_help()
+        try:
+            run_once(max_posts=args.max_posts, fetch_total=args.fetch_total)
+        except Exception as e:
+            log.exception("ERROR: %s", e)
+        return
+
+    # --loop
+    log.info("Start loop: interval=%ss, max_posts=%s, fetch_total=%s", args.interval, args.max_posts, args.fetch_total)
+    while True:
+        try:
+            run_once(max_posts=args.max_posts, fetch_total=args.fetch_total)
+        except Exception as e:
+            log.exception("ERROR (loop iteration): %s", e)
+        # Ngủ giữa các vòng
+        sleep_s = max(30, int(args.interval))
+        time.sleep(sleep_s)
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        sys.exit(0)
-    except Exception as e:
-        logging.exception("ERROR: %s", e)
-        sys.exit(1)
-
+    main()
