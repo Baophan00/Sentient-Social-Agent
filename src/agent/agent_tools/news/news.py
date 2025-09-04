@@ -350,10 +350,16 @@ class News:
         scored.sort(key=lambda x: (x["score"], x["published_ts"]), reverse=True)
         return scored
 
-    # ---------------- Compose tweet (✅ dùng cache summarize) ----------------
+    # ---------------- Compose tweet (✅ dùng cache summarize + ENV tham số LLM) ----------------
     def _llm_summarize(self, title: str, link: str, source: str, summary: str = "") -> str:
-        if not self.model or not hasattr(self.model, "query"):
-            return title
+        # ENV tham số cho tweet
+        fw_model = os.getenv("FIREWORKS_MODEL", "accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new").strip()
+        temp = float(os.getenv("FW_TEMPERATURE_TWEET", "0.25"))
+        top_p = float(os.getenv("FW_TOP_P_TWEET", "0.9"))
+        freq = float(os.getenv("FW_FREQUENCY_PENALTY_TWEET", "0.3"))
+        pres = float(os.getenv("FW_PRESENCE_PENALTY_TWEET", "0.0"))
+        max_tokens = int(os.getenv("FW_MAX_TOKENS_TWEET", "120"))
+
         prompt = (
             "You are a news assistant for Twitter/X. "
             "Write one engaging sentence under 240 characters (no hashtags, no emojis). "
@@ -363,12 +369,38 @@ class News:
             f"Summary: {summary}\n"
             "Return only the sentence."
         )
-        try:
-            text = str(self.model.query(prompt)).strip().replace("\n", " ")
-            return text or title
-        except Exception as ex:
-            log.warning("[NEWS] LLM summarize failed: %s", ex)
-            return title
+
+        # Ưu tiên gọi client OpenAI-compatible nếu có
+        if self.model:
+            try:
+                # OpenAI-compatible chat
+                resp = self.model.chat.completions.create(
+                    model=fw_model,
+                    messages=[
+                        {"role": "system", "content": "You write concise, factual, one-sentence news hooks."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=temp,
+                    top_p=top_p,
+                    frequency_penalty=freq,
+                    presence_penalty=pres,
+                    max_tokens=max_tokens,
+                )
+                text = (resp.choices[0].message.content or "").strip().replace("\n", " ")
+                if text:
+                    return text
+            except Exception as ex:
+                log.warning("[NEWS] LLM (chat.completions) failed: %s", ex)
+                # fallback qua .query nếu wrapper cũ còn tồn tại
+                try:
+                    text = str(self.model.query(prompt)).strip().replace("\n", " ")
+                    if text:
+                        return text
+                except Exception as ex2:
+                    log.warning("[NEWS] LLM summarize failed (query): %s", ex2)
+
+        # Fallback cuối cùng: dùng title
+        return title
 
     def _compose_tweet(self, a: Dict) -> str:
         hid = a["hid"]

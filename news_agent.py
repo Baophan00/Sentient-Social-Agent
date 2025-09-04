@@ -27,6 +27,19 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 SUMMARY_CACHE_TTL = int(os.getenv("SUMMARY_CACHE_TTL", "86400"))   # 24h
 DEEP_CACHE_TTL    = int(os.getenv("DEEP_CACHE_TTL",    "604800"))  # 7d
 
+# ---------- LLM param ENV (tóm tắt/phân tích) ----------
+FW_SUMMARY_TEMP        = float(os.getenv("FW_SUMMARY_TEMP",        "0.25"))
+FW_SUMMARY_TOP_P       = float(os.getenv("FW_SUMMARY_TOP_P",       "0.9"))
+FW_SUMMARY_FREQ_PEN    = float(os.getenv("FW_SUMMARY_FREQUENCY_PENALTY", "0.0"))
+FW_SUMMARY_PRES_PEN    = float(os.getenv("FW_SUMMARY_PRESENCE_PENALTY",  "0.0"))
+FW_SUMMARY_MAX_TOKENS  = int(os.getenv("FW_SUMMARY_MAX_TOKENS",    "700"))
+
+OA_SUMMARY_TEMP        = float(os.getenv("OA_SUMMARY_TEMP",        "0.3"))
+OA_SUMMARY_TOP_P       = float(os.getenv("OA_SUMMARY_TOP_P",       "1.0"))
+OA_SUMMARY_FREQ_PEN    = float(os.getenv("OA_SUMMARY_FREQUENCY_PENALTY", "0.0"))
+OA_SUMMARY_PRES_PEN    = float(os.getenv("OA_SUMMARY_PRESENCE_PENALTY",  "0.0"))
+OA_SUMMARY_MAX_TOKENS  = int(os.getenv("OA_SUMMARY_MAX_TOKENS",    "700"))
+
 DIV = "────────────────────────────────"
 BUL = "•"
 
@@ -137,7 +150,12 @@ def _fireworks_complete(prompt: str, model: Optional[str] = None) -> str:
     payload = {
         "model": (model or FIREWORKS_MODEL),
         "messages": [{"role": "system", "content": SYSTEM_SUMMARY},{"role": "user", "content": prompt}],
-        "temperature": 0.25, "max_tokens": 700, "stream": False,
+        "temperature": FW_SUMMARY_TEMP,
+        "top_p": FW_SUMMARY_TOP_P,
+        "frequency_penalty": FW_SUMMARY_FREQ_PEN,
+        "presence_penalty": FW_SUMMARY_PRES_PEN,
+        "max_tokens": FW_SUMMARY_MAX_TOKENS,
+        "stream": False,
     }
     r = requests.post(url, headers=headers, json=payload, timeout=60)
     r.raise_for_status()
@@ -153,7 +171,12 @@ def _openai_complete(prompt: str) -> str:
     payload = {
         "model": OPENAI_MODEL,
         "messages": [{"role":"system","content": SYSTEM_SUMMARY},{"role":"user","content": prompt}],
-        "temperature": 0.3, "max_tokens": 700, "stream": False,
+        "temperature": OA_SUMMARY_TEMP,
+        "top_p": OA_SUMMARY_TOP_P,
+        "frequency_penalty": OA_SUMMARY_FREQ_PEN,
+        "presence_penalty": OA_SUMMARY_PRES_PEN,
+        "max_tokens": OA_SUMMARY_MAX_TOKENS,
+        "stream": False,
     }
     r = requests.post(url, headers=headers, json=payload, timeout=60)
     if r.status_code != 200:
