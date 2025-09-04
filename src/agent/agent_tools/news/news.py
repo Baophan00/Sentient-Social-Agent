@@ -24,10 +24,12 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 PROCESSED_PATH = DATA_DIR / "news_processed.json"
 
+# ✅ thêm 2 file cache mới
+TWEETED_PATH   = DATA_DIR / "tweeted.json"     # lưu các HID đã tweet (skip hoàn toàn lần sau)
+SUMMARY_PATH   = DATA_DIR / "summarized.json"  # cache câu tweet đã tóm tắt (tiết kiệm LLM)
 
 def _hash(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
-
 
 def _normalize_published(entry) -> Tuple[str, float]:
     try:
@@ -41,10 +43,8 @@ def _normalize_published(entry) -> Tuple[str, float]:
         dt = datetime.now(tz=timezone.utc)
     return dt.isoformat(), dt.timestamp()
 
-
 def _truncate_tweet(text: str, limit: int = 280) -> str:
     return text if len(text) <= limit else text[:limit]
-
 
 def _clean_source_name(feed) -> str:
     name = ""
@@ -70,7 +70,6 @@ def _clean_source_name(feed) -> str:
             return v
     return name or "Unknown"
 
-
 def _safe_get(e, attr, default=""):
     try:
         v = getattr(e, attr, default) or default
@@ -78,11 +77,9 @@ def _safe_get(e, attr, default=""):
     except Exception:
         return default
 
-
 def _csv_env(name: str) -> List[str]:
     raw = os.getenv(name, "")
     return [x.strip() for x in raw.split(",") if x.strip()]
-
 
 class News:
     """
@@ -95,6 +92,10 @@ class News:
         self.model = model
         self.cfg = NewsConfig()
         self.processed: set[str] = self._load_processed()
+
+        # ✅ load thêm cache
+        self.tweeted: set[str] = self._load_tweeted()
+        self.summarized: Dict[str, str] = self._load_summarized()
 
         self._apply_overrides()
 
@@ -172,6 +173,36 @@ class News:
 
     def _save_processed(self):
         PROCESSED_PATH.write_text(json.dumps(sorted(self.processed)))
+
+    # ✅ load/save tweeted
+    def _load_tweeted(self) -> set:
+        if TWEETED_PATH.exists():
+            try:
+                return set(json.loads(TWEETED_PATH.read_text()))
+            except Exception:
+                log.warning("[NEWS] tweeted file broken. Starting fresh.")
+        return set()
+
+    def _save_tweeted(self):
+        try:
+            TWEETED_PATH.write_text(json.dumps(sorted(self.tweeted)))
+        except Exception as e:
+            log.warning("[NEWS] save tweeted failed: %s", e)
+
+    # ✅ load/save summarized
+    def _load_summarized(self) -> Dict[str, str]:
+        if SUMMARY_PATH.exists():
+            try:
+                return dict(json.loads(SUMMARY_PATH.read_text()))
+            except Exception:
+                log.warning("[NEWS] summarized file broken. Starting fresh.")
+        return {}
+
+    def _save_summarized(self):
+        try:
+            SUMMARY_PATH.write_text(json.dumps(self.summarized, ensure_ascii=False))
+        except Exception as e:
+            log.warning("[NEWS] save summarized failed: %s", e)
 
     # ---------------- Twitter (lazy init + bắt 429) ----------------
     def _ensure_twitter(self):
@@ -319,7 +350,7 @@ class News:
         scored.sort(key=lambda x: (x["score"], x["published_ts"]), reverse=True)
         return scored
 
-    # ---------------- Compose tweet ----------------
+    # ---------------- Compose tweet (✅ dùng cache summarize) ----------------
     def _llm_summarize(self, title: str, link: str, source: str, summary: str = "") -> str:
         if not self.model or not hasattr(self.model, "query"):
             return title
@@ -340,6 +371,13 @@ class News:
             return title
 
     def _compose_tweet(self, a: Dict) -> str:
+        hid = a["hid"]
+
+        # ✅ dùng cache nếu có
+        cached = self.summarized.get(hid)
+        if cached:
+            return _truncate_tweet(cached, 280)
+
         base = self._llm_summarize(a["title"], a["link"], a["source"], a.get("summary", ""))
         link = a["link"].strip()
         tags = ""
@@ -354,9 +392,15 @@ class News:
             if taglist:
                 tags = " " + " ".join(taglist)
         text = f"{base}{tags} {link}".strip()
-        return _truncate_tweet(text, 280)
+        text = _truncate_tweet(text, 280)
 
-    # ---------------- Posting (đã sửa dry-run & thêm NEWS_IGNORE_PROCESSED) ----------------
+        # ✅ ghi cache summarize
+        self.summarized[hid] = text
+        self._save_summarized()
+
+        return text
+
+    # ---------------- Posting (giữ processed + ✅ skip tweeted) ----------------
     def _post_batch(self, items: List[Dict], max_posts: int) -> int:
         posted = 0
         ignore_processed = os.getenv("NEWS_IGNORE_PROCESSED", "").lower() == "true"
@@ -366,6 +410,11 @@ class News:
             if posted >= max_posts:
                 break
 
+            # ✅ skip nếu đã tweet
+            if a["hid"] in self.tweeted:
+                log.debug("[NEWS] Skip (already tweeted): %s", a.get("title"))
+                continue
+
             if not ignore_processed and a["hid"] in self.processed:
                 log.debug("[NEWS] Skip (processed cache): %s", a.get("title"))
                 continue
@@ -373,7 +422,6 @@ class News:
             tweet = self._compose_tweet(a)
 
             if not self.auto_post:
-                # DRY-RUN: chỉ in, KHÔNG ghi processed để không chặn lần post thật sau đó
                 log.info("(dry-run) %s", tweet)
                 continue
 
@@ -395,7 +443,11 @@ class News:
             ok, tweet_id, retry_after = self.twitter.post_tweet(tweet)  # type: ignore
             if ok:
                 posted += 1
+                # ✅ đánh dấu đã tweet + processed
+                self.tweeted.add(a["hid"])
                 self.processed.add(a["hid"])
+                self._save_tweeted()
+                self._save_processed()
                 log.info("[NEWS] Tweeted (%s): %s", tweet_id, tweet)
                 time.sleep(3)
             else:
@@ -404,10 +456,10 @@ class News:
                     break
                 else:
                     log.warning("[NEWS] Post failed (non-429). Skipping this item.")
-                    # vẫn đánh dấu để không lặp lại lỗi cùng bài
                     self.processed.add(a["hid"])
 
-        self._save_processed()
+        # flush cache summarize (an toàn)
+        self._save_summarized()
         return posted
 
     # ---------------- For web_server ----------------

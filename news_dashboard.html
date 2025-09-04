@@ -147,6 +147,54 @@
       background-clip: text;
     }
     
+    /* X (Twitter) Icon - Đặt sau logo và tiêu đề */
+    .x-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(29, 161, 242, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .x-icon::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.6s ease;
+    }
+    
+    .x-icon:hover {
+      transform: translateY(-2px) scale(1.05);
+      box-shadow: 0 6px 16px rgba(29, 161, 242, 0.4);
+    }
+    
+    .x-icon:hover::before {
+      left: 100%;
+    }
+    
+    .x-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: white;
+      transition: transform 0.3s ease;
+    }
+    
+    .x-icon:hover svg {
+      transform: scale(1.1);
+    }
+    
     .pill{
       font-size:12px;
       font-weight:600;
@@ -156,6 +204,7 @@
       color: var(--text-secondary);
       background: var(--panel);
       backdrop-filter: blur(10px);
+      margin-left: auto; /* Đẩy status pill về bên phải */
     }
 
     /* layout - FIX: Stable grid để tránh co dãn */
@@ -449,6 +498,16 @@
         font-size: 24px;
       }
       
+      .x-icon {
+        width: 28px;
+        height: 28px;
+      }
+      
+      .x-icon svg {
+        width: 14px;
+        height: 14px;
+      }
+      
       .news-item {
         grid-template-columns: 1fr;
         gap: 12px;
@@ -475,6 +534,11 @@
     <header>
       <div class="logo"></div>
       <h1>Dobby News Agent</h1>
+      <a href="https://x.com/dobbynewsagent" target="_blank" rel="noopener noreferrer" class="x-icon" title="Follow @dobbynewsagent on X">
+        <svg viewBox="0 0 24 24">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+        </svg>
+      </a>
       <span class="pill" id="status-pill">checking…</span>
     </header>
 
@@ -533,6 +597,19 @@
     let sseSource = null;
     let spinnerTimer = null;
 
+    function formatTimeUTC(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'UTC'
+      }) + ' UTC';
+    }
+
     function startSpinner(label){
       stopSpinner();
       let dots = 0;
@@ -583,7 +660,7 @@
           <div class="news-item">
             <div>
               <h3>${escapeHtml(a.title || '')}</h3>
-              <div class="news-meta">${escapeHtml(a.source||'')} · ${escapeHtml(a.category||'')} · ${escapeHtml(a.published||'')}</div>
+              <div class="news-meta">${escapeHtml(a.source||'')} · ${escapeHtml(a.category||'')} · ${formatTimeUTC(a.published||'')}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">
               <a class="btn" href="${a.link}" target="_blank" rel="noopener noreferrer">Open</a>
