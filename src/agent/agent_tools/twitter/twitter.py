@@ -3,6 +3,7 @@ import logging
 import schedule
 import time
 import tweepy
+import os
 from pprint import pformat
 from .twitter_config import TwitterConfig
 
@@ -14,7 +15,7 @@ class Twitter:
 
     Attributes:
         v2api (tweepy.Client): Tweepy client for Twitter API v2.
-        user (dict): Authenticated user info.
+        user (dict|None): Authenticated user info (may be None if we skip get_me()).
         username (str): Screen name.
         user_id (str): User id.
 
@@ -35,7 +36,9 @@ class Twitter:
     ):
         """
         Initializes the Twitter class with the necessary parameters.
-        Sets up the Tweepy client and retrieves the authenticated user's ID.
+        Sets up the Tweepy client and retrieves the authenticated user's ID,
+        unless TWITTER_USERNAME and TWITTER_USER_ID are provided to skip get_me()
+        (giảm rủi ro dính 429 ngay lúc init).
         """
         logger.info("[TWITTER] Initializing Twitter client...")
         self.v2api = tweepy.Client(
@@ -47,10 +50,40 @@ class Twitter:
             return_type=dict
         )
 
+        # Cho phép skip get_me() nếu đã biết trước
+        env_username = (os.getenv("TWITTER_USERNAME") or "").strip()
+        env_user_id  = (os.getenv("TWITTER_USER_ID") or "").strip()
+
         logger.info("[TWITTER] Starting Twitter client...")
-        self.user = self.v2api.get_me()
-        self.username = self.user["data"]["username"]
-        self.user_id = self.user["data"]["id"]
+        self.user = None
+        if env_username and env_user_id:
+            # Bỏ qua gọi API /2/users/me để tránh 429
+            self.username = env_username
+            self.user_id = env_user_id
+        else:
+            # Gọi API để lấy thông tin tài khoản
+            try:
+                self.user = self.v2api.get_me()
+                self.username = self.user["data"]["username"]
+                self.user_id = self.user["data"]["id"]
+            except tweepy.errors.TooManyRequests as e:
+                retry_after = None
+                try:
+                    headers = getattr(e, "response", None).headers or {}
+                    low = {k.lower(): v for k, v in headers.items()}
+                    if "retry-after" in low:
+                        retry_after = int(low["retry-after"])
+                    elif "x-rate-limit-reset" in low:
+                        reset_at = int(low["x-rate-limit-reset"])
+                        retry_after = max(0, reset_at - int(time.time()))
+                except Exception:
+                    pass
+                logging.warning("[TWITTER] Rate limited during get_me() (429). Retry-After=%s", retry_after)
+                # Bubble up để News._ensure_twitter xử lý dừng vòng chạy
+                raise
+            except Exception as e:
+                logging.exception("[TWITTER] get_me() failed: %s", e)
+                raise
 
         self.model = model
         self.config = TwitterConfig()
@@ -228,7 +261,6 @@ class Twitter:
                 retry_after = None
                 try:
                     headers = getattr(e, "response", None).headers or {}
-                    # Normalize keys to lower for lookup
                     low = {k.lower(): v for k, v in headers.items()}
                     if "retry-after" in low:
                         retry_after = int(low["retry-after"])

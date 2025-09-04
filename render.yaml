@@ -9,14 +9,27 @@ services:
         value: 3000
       - key: FIREWORKS_API_KEY
         sync: false
-      - key: TWITTER_API_KEY
+      - key: FIREWORKS_MODEL
+        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
+      # Twitter creds (tên biến khớp code)
+      - key: TWITTER_CONSUMER_KEY
         sync: false
-      - key: TWITTER_API_SECRET
+      - key: TWITTER_CONSUMER_SECRET
         sync: false
       - key: TWITTER_ACCESS_TOKEN
         sync: false
-      - key: TWITTER_ACCESS_SECRET
+      - key: TWITTER_ACCESS_TOKEN_SECRET
         sync: false
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+      # News settings (5 phút 1 bài)
+      - key: NEWS_UPDATE_INTERVAL
+        value: "300"
+      - key: NEWS_MAX_ARTICLES_PER_UPDATE
+        value: "1"
+      # Tuỳ chọn: thêm RSS riêng nếu muốn
+      # - key: NEWS_SOURCES
+      #   value: https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml,https://hnrss.org/frontpage
 
   - type: worker
     name: ssa-news-worker
@@ -26,11 +39,21 @@ services:
     envVars:
       - key: FIREWORKS_API_KEY
         sync: false
-      - key: TWITTER_API_KEY
+      - key: FIREWORKS_MODEL
+        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
+      # Twitter creds (tên biến khớp code)
+      - key: TWITTER_CONSUMER_KEY
         sync: false
-      - key: TWITTER_API_SECRET
+      - key: TWITTER_CONSUMER_SECRET
         sync: false
       - key: TWITTER_ACCESS_TOKEN
         sync: false
-      - key: TWITTER_ACCESS_SECRET
+      - key: TWITTER_ACCESS_TOKEN_SECRET
         sync: false
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+      # News settings (5 phút 1 bài)
+      - key: NEWS_UPDATE_INTERVAL
+        value: "300"
+      - key: NEWS_MAX_ARTICLES_PER_UPDATE
+        value: "1"

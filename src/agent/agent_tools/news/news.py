@@ -12,6 +12,7 @@ from time import mktime
 from typing import Any, Dict, List, Tuple, Optional
 
 import feedparser
+import tweepy  # để bắt lỗi rate-limit 429
 
 from .news_config import NewsConfig
 from ..twitter.twitter import Twitter
@@ -128,8 +129,8 @@ class News:
             return default
 
         self.update_interval = int(os.getenv(
-            "NEWS_UPDATE_INTERVAL",
-            _get_from_agent("NEWS_UPDATE_INTERVAL", self.update_interval)
+            "NEWS_MIN_INTERVAL_SEC",
+            _get_from_agent("NEWS_MIN_INTERVAL_SEC", self.update_interval)
         ))
 
         env_cats = _csv_env("NEWS_CATEGORIES")
@@ -172,7 +173,7 @@ class News:
     def _save_processed(self):
         PROCESSED_PATH.write_text(json.dumps(sorted(self.processed)))
 
-    # ---------------- Twitter (lazy init) ----------------
+    # ---------------- Twitter (lazy init + bắt 429) ----------------
     def _ensure_twitter(self):
         if self.twitter is not None:
             return
@@ -182,14 +183,32 @@ class News:
         access_token_secret = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
         bearer_token = os.getenv("TWITTER_BEARER_TOKEN")
 
-        tw = Twitter(
-            consumer_key=consumer_key,
-            consumer_secret=consumer_secret,
-            access_token=access_token,
-            access_token_secret=access_token_secret,
-            bearer_token=bearer_token,
-            model=self.model,
-        )
+        try:
+            tw = Twitter(
+                consumer_key=consumer_key,
+                consumer_secret=consumer_secret,
+                access_token=access_token,
+                access_token_secret=access_token_secret,
+                bearer_token=bearer_token,
+                model=self.model,
+            )
+        except tweepy.errors.TooManyRequests as e:
+            retry_after = None
+            try:
+                headers = getattr(e, "response", None).headers or {}
+                low = {k.lower(): v for k, v in headers.items()}
+                if "retry-after" in low:
+                    retry_after = int(low["retry-after"])
+                elif "x-rate-limit-reset" in low:
+                    reset_at = int(low["x-rate-limit-reset"])
+                    retry_after = max(0, reset_at - int(time.time()))
+            except Exception:
+                pass
+            log.warning("[NEWS] Twitter init hit 429. Retry-After=%s", retry_after)
+            raise RuntimeError(f"TWITTER_RATE_LIMIT:{retry_after if retry_after is not None else ''}")
+        except Exception:
+            raise
+
         if not getattr(tw, "config", None) or not getattr(tw.config, "KEY_USERS", None):
             tw.config.KEY_USERS = [getattr(tw, "username", "newsbot")]
         self.twitter = tw
@@ -337,23 +356,41 @@ class News:
         text = f"{base}{tags} {link}".strip()
         return _truncate_tweet(text, 280)
 
-    # ---------------- Posting ----------------
+    # ---------------- Posting (đã sửa dry-run & thêm NEWS_IGNORE_PROCESSED) ----------------
     def _post_batch(self, items: List[Dict], max_posts: int) -> int:
         posted = 0
+        ignore_processed = os.getenv("NEWS_IGNORE_PROCESSED", "").lower() == "true"
+        ensure_done = False  # chỉ init twitter một lần
+
         for a in items:
             if posted >= max_posts:
                 break
-            if a["hid"] in self.processed:
+
+            if not ignore_processed and a["hid"] in self.processed:
+                log.debug("[NEWS] Skip (processed cache): %s", a.get("title"))
                 continue
 
             tweet = self._compose_tweet(a)
 
             if not self.auto_post:
+                # DRY-RUN: chỉ in, KHÔNG ghi processed để không chặn lần post thật sau đó
                 log.info("(dry-run) %s", tweet)
-                self.processed.add(a["hid"])
                 continue
 
-            self._ensure_twitter()
+            if not ensure_done:
+                try:
+                    self._ensure_twitter()
+                    ensure_done = True
+                except RuntimeError as rt:
+                    msg = str(rt)
+                    if msg.startswith("TWITTER_RATE_LIMIT:"):
+                        try:
+                            retry_after = int((msg.split(":", 1)[1] or "0"))
+                        except Exception:
+                            retry_after = None
+                        log.warning("[NEWS] Hit rate limit on init. Stop this cycle. Suggested wait ~%ss", retry_after)
+                        return 0
+                    raise
 
             ok, tweet_id, retry_after = self.twitter.post_tweet(tweet)  # type: ignore
             if ok:
@@ -367,6 +404,7 @@ class News:
                     break
                 else:
                     log.warning("[NEWS] Post failed (non-429). Skipping this item.")
+                    # vẫn đánh dấu để không lặp lại lỗi cùng bài
                     self.processed.add(a["hid"])
 
         self._save_processed()

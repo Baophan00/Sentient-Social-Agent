@@ -110,8 +110,9 @@ def main():
                         help="Max number of tweets per cycle.")
     parser.add_argument("--fetch-total", type=int, default=int(os.getenv("NEWS_FETCH_MAX_TOTAL", "40")),
                         help="Max number of articles to fetch per cycle before ranking.")
-    parser.add_argument("--interval", type=int, default=int(os.getenv("NEWS_UPDATE_INTERVAL", "600")),
-                        help="Sleep seconds between cycles when --loop (default from NEWS_UPDATE_INTERVAL).")
+    parser.add_argument("--interval", type=int, default=int(os.getenv("NEWS_MIN_INTERVAL_SEC", "600")),
+                    help="Sleep seconds between cycles when --loop (default from NEWS_MIN_INTERVAL_SEC).")
+
     args = parser.parse_args()
 
     if not (args.once or args.loop):

@@ -1,6 +1,7 @@
 # news_agent.py
 from __future__ import annotations
-import os, re, json, logging, requests
+import os, re, json, logging, requests, time, hashlib
+from pathlib import Path
 from typing import List, Optional, Callable
 
 log = logging.getLogger("ssa.news")
@@ -19,6 +20,12 @@ SEARXNG_API_KEY = os.getenv("SEARXNG_API_KEY", "").strip()
 JINA_API_KEY = os.getenv("JINA_API_KEY", "").strip()
 
 ODS_MODEL = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
+
+# ---------- Cache settings ----------
+CACHE_DIR = Path("data/cache_analysis")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+SUMMARY_CACHE_TTL = int(os.getenv("SUMMARY_CACHE_TTL", "86400"))   # 24h
+DEEP_CACHE_TTL    = int(os.getenv("DEEP_CACHE_TTL",    "604800"))  # 7d
 
 DIV = "────────────────────────────────"
 BUL = "•"
@@ -49,22 +56,17 @@ def _ensure_card(summary_block: str, analysis_block: str, link: str = "") -> str
         text = re.sub(r"(?i)^opportunit(y|ies)\s*:?\s*$", "**Opportunities**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^(market (impact|view))\s*:?\s*$", "**Market view**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^sources?\s*:?\s*$", "**Sources**", text, flags=re.MULTILINE)
-        # if "**Deep Analysis**" not in text:
-        #     text = f"**Summary**\n{text}"
         parts.append(text)
 
     card_body = "\n\n".join([p for p in parts if p.strip()])
     card = f"{DIV}\n{card_body}\n\n{DIV}"
 
-    # Chỉ thêm "Link: ..." nếu chưa xuất hiện trong nội dung (tránh trùng với Sources)
     if link:
         whole = card_body.lower()
         if link.lower() not in whole:
             card += f"\nLink: {link}"
 
     return card.strip()
-
-
 
 SYSTEM_SUMMARY = (
     "You are a concise news summarizer. Output clean English in a card layout without markdown headers (#). "
@@ -97,6 +99,34 @@ ODS_ANALYSIS_PROMPT = (
     "Description: {description}\n"
     "Link: {link}\n"
 )
+
+# ---------------- Cache helpers ----------------
+def _cache_key(kind: str, title: str, description: str, link: str) -> str:
+    raw = f"{kind}||{(title or '').strip()}||{(description or '').strip()}||{(link or '').strip()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+def _cache_path(key: str) -> Path:
+    return CACHE_DIR / f"{key}.json"
+
+def _cache_load(key: str, ttl: int) -> Optional[str]:
+    p = _cache_path(key)
+    if not p.exists(): return None
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8"))
+        ts = int(obj.get("ts", 0))
+        if ttl > 0 and (time.time() - ts) > ttl:
+            return None
+        return str(obj.get("content", "")).strip() or None
+    except Exception:
+        return None
+
+def _cache_save(key: str, content: str) -> None:
+    try:
+        p = _cache_path(key)
+        data = {"ts": int(time.time()), "content": content}
+        p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        log.warning("Cache write failed: %s", e)
 
 # ---------------- Fireworks / OpenAI ----------------
 def _fireworks_complete(prompt: str, model: Optional[str] = None) -> str:
@@ -191,8 +221,14 @@ class SummarizerService:
     def __init__(self, fireworks_model: Optional[str] = None):
         self.fireworks_model = (fireworks_model or FIREWORKS_MODEL).strip()
 
-    # ✅ Chỉ tóm tắt (được /api/summarize gọi)
+    # ✅ Chỉ tóm tắt (được /api/summarize gọi) — có cache
     def summarize_only(self, title: str, description: str, link: str) -> str:
+        key = _cache_key("summary", title, description, link)
+        hit = _cache_load(key, SUMMARY_CACHE_TTL)
+        if hit:
+            log.info("[CACHE] summary hit")
+            return hit
+
         prompt = SUMMARY_PROMPT_TEMPLATE.format(title=title, description=description, link=link)
         txt = ""
         try:
@@ -200,52 +236,70 @@ class SummarizerService:
         except Exception as e:
             log.warning("Fireworks summary error: %s", e)
         if not txt:
-            # fallback OpenAI nếu có
             try:
                 txt = _openai_complete(prompt)
             except Exception as e:
                 log.warning("OpenAI summary error: %s", e)
         if not txt:
             raise RuntimeError("No summary available")
-        # Trả card chỉ có Summary (+ Impact auto nếu thiếu)
-        return _ensure_card(summary_block=txt, analysis_block="", link=link)
 
-    # ✅ Chỉ phân tích sâu (được /api/deep_analyze_sse gọi)
+        card = _ensure_card(summary_block=txt, analysis_block="", link=link)
+        _cache_save(key, card)
+        return card
+
+    # ✅ Chỉ phân tích sâu (được /api/deep_analyze_sse gọi) — có cache
     def deep_analyze_only(self, title: str, description: str, link: str) -> str:
+        key = _cache_key("analysis", title, description, link)
+        hit = _cache_load(key, DEEP_CACHE_TTL)
+        if hit:
+            log.info("[CACHE] analysis hit")
+            return hit
+
         txt = _ods_deep_analysis(title, description, link)
         if not txt:
             raise RuntimeError("No deep analysis available")
-        # Trả card CHỈ có Deep Analysis (không thêm Summary)
-        return _ensure_card(summary_block="", analysis_block=txt, link=link)
+
+        card = _ensure_card(summary_block="", analysis_block=txt, link=link)
+        _cache_save(key, card)
+        return card
 
     # (Giữ để tương thích chỗ cũ nếu nơi nào đó còn gọi)
     def summarize_and_analyze(self, title: str, description: str, link: str) -> str:
-        # summary
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(title=title, description=description, link=link)
-        summary_block = ""
-        try:
-            s = _fireworks_complete(prompt, model=self.fireworks_model)
-            if s: summary_block = _clean_text(s)
-        except Exception as e:
-            log.warning("Fireworks error (summary): %s", e)
+        # summary (cache riêng)
+        s_key = _cache_key("summary", title, description, link)
+        summary_block = _cache_load(s_key, SUMMARY_CACHE_TTL) or ""
         if not summary_block:
+            prompt = SUMMARY_PROMPT_TEMPLATE.format(title=title, description=description, link=link)
             try:
-                s = _openai_complete(prompt)
-                if s: summary_block = s
+                s = _fireworks_complete(prompt, model=self.fireworks_model)
+                if s: summary_block = _ensure_card(s, "", link=link)
             except Exception as e:
-                log.warning("OpenAI error (summary): %s", e)
+                log.warning("Fireworks error (summary): %s", e)
+            if not summary_block:
+                try:
+                    s = _openai_complete(prompt)
+                    if s: summary_block = _ensure_card(s, "", link=link)
+                except Exception as e:
+                    log.warning("OpenAI error (summary): %s", e)
+            if summary_block:
+                _cache_save(s_key, summary_block)
 
-        # deep
-        analysis_block = ""
-        try:
-            a = _ods_deep_analysis(title, description, link)
-            if a: analysis_block = a
-        except Exception as e:
-            log.warning("ODS error (analysis): %s", e)
+        # deep (cache riêng)
+        a_key = _cache_key("analysis", title, description, link)
+        analysis_block = _cache_load(a_key, DEEP_CACHE_TTL) or ""
+        if not analysis_block:
+            try:
+                a = _ods_deep_analysis(title, description, link)
+                if a: analysis_block = _ensure_card("", a, link=link)
+            except Exception as e:
+                log.warning("ODS error (analysis): %s", e)
+            if analysis_block:
+                _cache_save(a_key, analysis_block)
 
         if not summary_block and not analysis_block:
             raise RuntimeError("No summarizer/analyzer available")
-        return _ensure_card(summary_block, analysis_block, link=link)
+        # Ở đây 2 block đã là card; ghép gọn
+        return "\n\n".join([b for b in [summary_block, analysis_block] if b.strip()])
 
 # Kept for compatibility
 class NewsAgent:

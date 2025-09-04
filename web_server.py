@@ -1,7 +1,8 @@
 # web_server.py
-import os, sys, json, logging
-from typing import List, Any, Optional
+import os, sys, json, logging, hashlib
+from typing import List, Any
 from datetime import datetime, timezone
+from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -29,14 +30,12 @@ if os.path.isdir(SRC_PATH) and SRC_PATH not in sys.path:
 # ---- SSA News tool ----
 SSA_News = None
 try:
-    # Nếu package __init__ đã export News thì dòng này OK
-    # Nếu không, đổi thành: from src.agent.agent_tools.news.news import News as SSA_News
     from src.agent.agent_tools.news import News as SSA_News  # type: ignore
     log.info("SSA News available.")
 except Exception as e:
     log.warning("SSA News not found: %s", e)
 
-# ---- Summarizer service (yours) ----
+# ---- Summarizer service ----
 SummarizerService = None
 try:
     from news_agent import SummarizerService  # type: ignore
@@ -52,6 +51,14 @@ try:
 except Exception:
     ODS_AVAILABLE = False
 
+# ---- Cache dirs ----
+CACHE_DIR = Path("data/cache_analysis")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _hash_key(*parts: str) -> str:
+    raw = "||".join([p.strip() for p in parts if p])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
 app = Flask(__name__, static_url_path="", static_folder=".")
 CORS(app)
 
@@ -61,7 +68,9 @@ news_mode = "none"
 if SSA_News is not None and FIREWORKS_API_KEY:
     try:
         secrets = {"NEWS_API_KEY": NEWS_API_KEY, "FIREWORKS_API_KEY": FIREWORKS_API_KEY}
+        interval = int(os.getenv("NEWS_MIN_INTERVAL_SEC", "3600"))
         news_agent = SSA_News(secrets, None)
+        news_agent.update_interval = interval
         news_mode = "ssa"
         log.info("News agent initialized (SSA).")
     except Exception as e:
@@ -115,70 +124,23 @@ def root():
     return send_from_directory(".", "news_dashboard.html")
 
 # ---------- News ----------
-def _normalize_category(cat: str) -> str:
-    # mapping tên tab -> category nội bộ của tool
-    m = {
-        "": "", "all": "",
-        "technology": "tech", "tech": "tech",
-        "crypto": "crypto",
-        "business": "finance", "finance": "finance",
-        "ai": "ai",
-        "general": "general"
-    }
-    return m.get((cat or "").lower(), (cat or "").lower())
-
-def _filter_locally(items: List[dict], category: str) -> List[dict]:
-    """Fallback nếu tool không có get_latest_news(category=...)"""
-    if not category:
-        return items
-    out = []
-    cat = category.lower()
-    for a in items:
-        a_cat = str(a.get("category","")).lower()
-        if a_cat == cat:
-            out.append(a)
-    return out
-
 @app.route("/api/news")
 def api_news():
     if not news_agent:
         return jsonify({"status":"error","message":"News service unavailable"}), 503
-
-    raw_cat = request.args.get("category","").strip()
-    category = _normalize_category(raw_cat)
+    raw_cat = request.args.get("category","").strip().lower()
     limit = min(max(int(request.args.get("limit", 50)), 1), 100)
-
     try:
-        # Ưu tiên: dùng API mới get_latest_news(max_total, category=...)
         if hasattr(news_agent, "get_latest_news"):
-            try:
-                arts = news_agent.get_latest_news(max_total=limit, category=category)  # type: ignore
-            except TypeError:
-                # nếu bản tool cũ chưa có tham số category
-                arts = news_agent.get_latest_news(max_total=limit)  # type: ignore
-                if category:
-                    arts = _filter_locally(arts, category)
+            arts = news_agent.get_latest_news(max_total=limit, category=raw_cat)  # type: ignore
         else:
-            # Tool rất cũ: có fetch_rss_news(category, max_articles)
-            if category:
-                arts = news_agent.fetch_rss_news(category, max_articles=limit)  # type: ignore
-            else:
-                # không có API mới thì gom từng category phổ biến
-                merged: List[dict] = []
-                for c in ["ai","tech","crypto","finance","general"]:
-                    try:
-                        merged.extend(news_agent.fetch_rss_news(c, max_articles=limit//3 or 1))  # type: ignore
-                    except Exception:
-                        pass
-                arts = merged[:limit]
-
+            arts = news_agent.fetch_rss_news(raw_cat, max_articles=limit)  # type: ignore
         return jsonify({"status":"success","source":"ssa","articles": _serialize_articles(arts)})
-
     except Exception as e:
         log.error("/api/news error: %s", e, exc_info=True)
         return jsonify({"status":"error","message":str(e)}), 500
 
-# ---------- Summarize (Fireworks only) ----------
+# ---------- Summarize (with cache) ----------
 @app.route("/api/summarize", methods=["POST"])
 def api_summarize():
     if summarizer is None:
@@ -191,43 +153,54 @@ def api_summarize():
     title = str(data.get("title","")).strip()
     desc  = str(data.get("description","") or data.get("summary","")).strip()
     link  = str(data.get("url","") or data.get("link","")).strip()
+
     if not title and not desc and not link:
         return jsonify({"status":"error","message":"title/description/link required"}), 400
 
+    key = _hash_key("summarize", title, desc, link)
+    cache_path = CACHE_DIR / f"{key}.json"
+
+    if cache_path.exists():
+        cached = json.loads(cache_path.read_text())
+        return jsonify({"status":"success","summary": cached.get("summary", "")})
+
     try:
         md = summarizer.summarize_only(title, desc, link)
+        cache_path.write_text(json.dumps({"summary": md}, ensure_ascii=False))
         return jsonify({"status":"success","summary": md})
     except Exception as e:
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
-# ---------- Deep Analysis (SSE, ODS on-demand) ----------
+# ---------- Deep Analysis (with cache, SSE) ----------
 @app.route("/api/deep_analyze_sse")
 def api_deep_analyze_sse():
     title = str(request.args.get("title","")).strip()
     desc  = str(request.args.get("description","")).strip()
     link  = str(request.args.get("url","")).strip()
 
+    key = _hash_key("deep", title, desc, link)
+    cache_path = CACHE_DIR / f"{key}.json"
+
     def stream():
-        # Stage 1: init
+        if cache_path.exists():
+            cached = json.loads(cache_path.read_text())
+            yield _sse({"type":"done", "analysis": cached.get("analysis", "")})
+            return
+
         yield _sse({"type":"stage","stage":"init","detail":"Preparing…"})
         if not ODS_AVAILABLE:
             yield _sse({"type":"error","message":"ODS not installed (torch missing)."})
             return
-        # Stage 2: searching…
-        if SEARXNG_INSTANCE_URL:
-            yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
-        else:
-            yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
-        # Stage 3: reranking…
+        yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
         yield _sse({"type":"stage","stage":"reranker","detail":"Reranking…"})
-        # Stage 4: synthesizing (LLM)
         yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing analysis…"})
 
         try:
             if summarizer is None:
                 raise RuntimeError("Analyzer unavailable")
             result = summarizer.deep_analyze_only(title, desc, link)
+            cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
             yield _sse({"type":"done","analysis": result})
         except Exception as e:
             yield _sse({"type":"error","message": f"Deep analysis failed: {e}"})
@@ -243,7 +216,7 @@ def api_status():
     return jsonify({
         "status": "ok",
         "timestamp": _now_iso(),
-        "version": "2.4",
+        "version": "2.5-cache",
         "components": {
             "fireworks_model": FIREWORKS_MODEL,
             "model_configured": bool(FIREWORKS_API_KEY),
