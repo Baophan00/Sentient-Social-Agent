@@ -1,86 +1,34 @@
 services:
-  # 🌐 Web (chỉ phục vụ dashboard, KHÔNG post X)
+  # 🌐 Web service
   - type: web
     name: dobby-news-web
     env: python
-    region: oregon
     plan: free
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: |
-      gunicorn -w 2 -b 0.0.0.0:$PORT web_server:app
+    startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-      - key: NEWS_AUTO_POST
-        value: "false" # web không post X
-      - key: NEWS_MIN_INTERVAL_SEC
-        value: "3600"
-      # —— LLM/Search (chỉ cần cho summarize/deep analyze trên web) ——
-      - key: FIREWORKS_API_KEY
-        sync: false
-      - key: FIREWORKS_MODEL
-        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
-      - key: SERPER_API_KEY
-        sync: false
-      - key: JINA_API_KEY
-        sync: false
     disk:
       name: data
-      mountPath: data # mount relative để khớp Path("data")
+      mountPath: /app/data
       sizeGB: 1
 
-  # ⚙️ Worker (tự động quét & đăng X)
+  # ⚙️ Background worker
   - type: worker
     name: dobby-news-worker
     env: python
-    region: oregon
     plan: free
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: |
-      ./.venv/bin/python news_runner.py --loop
-    numInstances: 1
+    startCommand: python news_runner.py --loop
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-
-      # ——— NEWS config ———
-      - key: NEWS_AUTO_POST
-        value: "true" # worker là nơi post
-      - key: NEWS_MIN_INTERVAL_SEC
-        value: "3600" # 1 giờ/lần
-      - key: NEWS_MAX_ARTICLES_PER_UPDATE
-        value: "1" # mỗi vòng đăng 1 bài
-      - key: NEWS_CATEGORIES
-        value: tech,crypto,ai # tuỳ bạn
-
-      # ——— Twitter (bắt buộc) ———
-      - key: TWITTER_CONSUMER_KEY
-        sync: false
-      - key: TWITTER_CONSUMER_SECRET
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN_SECRET
-        sync: false
-      - key: TWITTER_BEARER_TOKEN
-        sync: false
-
-      # ——— LLM (nên có để tweet mượt hơn) ———
-      - key: FIREWORKS_API_KEY
-        sync: false
-      - key: FIREWORKS_MODEL
-        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
-
-      # ——— (tuỳ chọn, không ảnh hưởng Worker) ———
-      - key: SERPER_API_KEY
-        sync: false
-      - key: JINA_API_KEY
-        sync: false
     disk:
       name: data
-      mountPath: data # mount relative để khớp Path("data")
+      mountPath: /app/data
       sizeGB: 1
