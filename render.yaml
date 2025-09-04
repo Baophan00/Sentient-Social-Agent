@@ -1,59 +1,34 @@
 services:
+  # 🌐 Web service
   - type: web
-    name: ssa-news-web
+    name: dobby-news-web
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
+    plan: free # có thể đổi sang starter/standard nếu cần CPU/RAM cao hơn
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python web_server.py
     envVars:
-      - key: PORT
-        value: 3000
-      - key: FIREWORKS_API_KEY
-        sync: false
-      - key: FIREWORKS_MODEL
-        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
-      # Twitter creds (tên biến khớp code)
-      - key: TWITTER_CONSUMER_KEY
-        sync: false
-      - key: TWITTER_CONSUMER_SECRET
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN_SECRET
-        sync: false
-      - key: TWITTER_BEARER_TOKEN
-        sync: false
-      # News settings (5 phút 1 bài)
-      - key: NEWS_UPDATE_INTERVAL
-        value: "300"
-      - key: NEWS_MAX_ARTICLES_PER_UPDATE
-        value: "1"
-      # Tuỳ chọn: thêm RSS riêng nếu muốn
-      # - key: NEWS_SOURCES
-      #   value: https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml,https://hnrss.org/frontpage
+      - key: PYTHON_VERSION
+        value: 3.11
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
 
+  # ⚙️ Background worker
   - type: worker
-    name: ssa-news-worker
+    name: dobby-news-worker
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python news_runner.py --loop --max-posts 1
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python news_runner.py --loop
     envVars:
-      - key: FIREWORKS_API_KEY
-        sync: false
-      - key: FIREWORKS_MODEL
-        value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
-      # Twitter creds (tên biến khớp code)
-      - key: TWITTER_CONSUMER_KEY
-        sync: false
-      - key: TWITTER_CONSUMER_SECRET
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN
-        sync: false
-      - key: TWITTER_ACCESS_TOKEN_SECRET
-        sync: false
-      - key: TWITTER_BEARER_TOKEN
-        sync: false
-      # News settings (5 phút 1 bài)
-      - key: NEWS_UPDATE_INTERVAL
-        value: "300"
-      - key: NEWS_MAX_ARTICLES_PER_UPDATE
-        value: "1"
+      - key: PYTHON_VERSION
+        value: 3.11
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
