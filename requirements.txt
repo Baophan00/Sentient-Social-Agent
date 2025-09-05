@@ -22,7 +22,7 @@ requests-oauthlib==2.0.0
 oauthlib==3.3.1
 
 # --- ODS (deep analyze) ---
-opendeepsearch>=0.1.23,<0.2.0
+opendeepsearch==0.1.23
 aiohttp==3.12.15
 aiosignal==1.4.0
 aiohappyeyeballs==2.6.1
