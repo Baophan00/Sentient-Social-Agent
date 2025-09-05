@@ -43,6 +43,77 @@ OA_SUMMARY_MAX_TOKENS  = int(os.getenv("OA_SUMMARY_MAX_TOKENS",    "700"))
 DIV = "────────────────────────────────"
 BUL = "•"
 
+# ---------- ODS hot-patch: make build_context accept objects (SearchResult) ----------
+def _to_dictish(x):
+    try:
+        if x is None:
+            return {}
+        if isinstance(x, dict):
+            return x
+        if hasattr(x, "model_dump"):  # pydantic v2
+            return x.model_dump()
+        if hasattr(x, "dict"):        # pydantic v1
+            return x.dict()
+        if hasattr(x, "__dict__"):
+            return dict(x.__dict__)
+    except Exception:
+        pass
+    return x
+
+def _apply_ods_patch():
+    """
+    Hot-patch ODS so build_context can accept object-style SearchResult.
+    We patch BOTH:
+      1) opendeepsearch.context_building.build_context.build_context
+      2) the 'build_context' symbol already imported into opendeepsearch.ods_agent
+    """
+    try:
+        import opendeepsearch.context_building.build_context as bc  # type: ignore
+    except Exception:
+        return
+
+    # already patched?
+    if getattr(bc, "_ssa_patched", False):
+        # also ensure ods_agent picks up the patched one
+        try:
+            import opendeepsearch.ods_agent as oa  # type: ignore
+            oa.build_context = bc.build_context
+            oa._ssa_patched = True
+        except Exception:
+            pass
+        return
+
+    old_fn = getattr(bc, "build_context", None)
+    if not callable(old_fn):
+        return
+
+    def wrapped(sources_result, *args, **kwargs):
+        sr = _to_dictish(sources_result)
+        if not isinstance(sr, dict):
+            try:
+                sr = {
+                    "organic": getattr(sources_result, "organic", []),
+                    "news": getattr(sources_result, "news", []),
+                    "videos": getattr(sources_result, "videos", []),
+                }
+            except Exception:
+                # fall through; let original raise if necessary
+                pass
+        return old_fn(sr, *args, **kwargs)
+
+    # patch the module function
+    bc.build_context = wrapped
+    bc._ssa_patched = True
+
+    # ALSO patch the alias inside ods_agent (it imported the old function at module import time)
+    try:
+        import opendeepsearch.ods_agent as oa  # type: ignore
+        oa.build_context = wrapped
+        oa._ssa_patched = True
+    except Exception:
+        pass
+
+
 def _clean_text(s: str) -> str:
     if not s: return ""
     s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)   # bỏ heading markdown
@@ -203,6 +274,12 @@ def ods_runtime_snapshot() -> dict:
     return {"search_provider": search_provider, "reranker": reranker, "llm_provider": llm_provider}
 
 def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Optional[Callable[[str], None]] = None) -> str:
+    # đảm bảo patch đã bật (trường hợp import thứ tự khác)
+    try:
+        _apply_ods_patch()
+    except Exception:
+        pass
+
     try:
         from opendeepsearch import OpenDeepSearchTool
     except Exception as e:
@@ -233,6 +310,8 @@ def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Option
 
     query = ODS_ANALYSIS_PROMPT.format(title=title, description=description, link=link)
     try:
+        # Nếu bản ODS của bạn hỗ trợ tham số, có thể dùng:
+        # res = tool.forward(query, max_sources=1, pro_mode=False)  # "nhẹ" hơn
         res = tool.forward(query)
         return _clean_text(str(res) if res is not None else "")
     except Exception as e:
