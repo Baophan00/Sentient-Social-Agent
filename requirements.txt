@@ -22,7 +22,7 @@ tweepy==4.16.0
 requests-oauthlib==2.0.0
 oauthlib==3.3.1
 
-# --- HTTP async ---
+# --- HTTP async (ODS needs these) ---
 aiohttp==3.12.15
 aiosignal==1.4.0
 aiohappyeyeballs==2.6.1
@@ -34,20 +34,11 @@ charset-normalizer==3.4.3
 urllib3==2.5.0
 certifi==2025.8.3
 
-# --- Data processing (needed for your app) ---
+# --- Optional data libs (giữ nếu bạn thật sự dùng trên dashboard) ---
 beautifulsoup4==4.13.5
 lxml==5.4.0
 pandas==2.3.2
 numpy==2.3.2
 
-# --- Parsing ---
-pathlib2==2.3.7
-
-# --- PyTorch (CPU-only for Render free plan) - Install before ODS ---
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.7.1+cpu
-torchvision==0.22.1+cpu
-torchaudio==2.7.1+cpu
-
-# --- ODS (deep analyze) - Install last to avoid conflicts ---
-git+https://github.com/sentient-agi/OpenDeepSearch.git
+# --- ODS từ vendor (ổn định, không phụ thuộc GitHub khi build) ---
+-e ./vendor/opendeepsearch
