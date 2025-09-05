@@ -1,10 +1,11 @@
 services:
+  # 🌐 Web service
   - type: web
     name: dobby-news-web
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip setuptools wheel
+      pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
     envVars:
@@ -15,12 +16,13 @@ services:
       mountPath: /app/data
       sizeGB: 1
 
+  # ⚙️ Background worker
   - type: worker
     name: dobby-news-worker
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip setuptools wheel
+      pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: python news_runner.py --loop
     envVars:
