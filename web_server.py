@@ -1,3 +1,4 @@
+# web_server.py
 import os, sys, json, logging, hashlib
 from typing import List, Any
 from datetime import datetime, timezone
@@ -19,24 +20,24 @@ SERPER_API_KEY        = os.getenv("SERPER_API_KEY", "").strip()
 SEARXNG_INSTANCE_URL  = os.getenv("SEARXNG_INSTANCE_URL", "").strip()
 SEARXNG_API_KEY       = os.getenv("SEARXNG_API_KEY", "").strip()
 JINA_API_KEY          = os.getenv("JINA_API_KEY", "").strip()
+OPENROUTER_API_KEY    = os.getenv("OPENROUTER_API_KEY", "").strip()
 ODS_MODEL             = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 SRC_PATH = os.path.join(ROOT, "src")
 
-# Fix path issues cho Render
+# Extend sys.path for both local & Render
 paths_to_add = [
     ROOT,
     SRC_PATH,
     os.path.join(ROOT, "src", "agent"),
-    os.path.join(ROOT, "src", "agent", "agent_tools")
+    os.path.join(ROOT, "src", "agent", "agent_tools"),
 ]
-
 for path in paths_to_add:
     if os.path.isdir(path) and path not in sys.path:
         sys.path.insert(0, path)
 
-# ---- SSA News tool ----
+# ---- SSA News tool (optional) ----
 SSA_News = None
 try:
     try:
@@ -64,9 +65,8 @@ except Exception as e:
 CACHE_DIR = Path("data/cache_analysis")
 try:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    test_file = CACHE_DIR / "test.txt"
-    test_file.write_text("test")
-    test_file.unlink()
+    (CACHE_DIR / ".__w").write_text("ok")
+    (CACHE_DIR / ".__w").unlink(missing_ok=True)
     log.info(f"Cache directory ready: {CACHE_DIR}")
 except Exception as e:
     log.error(f"Cannot create cache directory: {e}")
@@ -79,18 +79,36 @@ def _hash_key(*parts: str) -> str:
     raw = "||".join([p.strip() for p in parts if p])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
-# ---- Check ODS availability (Torch optional) ----
-def _check_ods_availability():
-    """Check ODS availability without requiring Torch (Torch optional)."""
+# ===== Diagnostics =====
+def _check_ods_modules():
+    info = {"import": False, "tool": False, "version": "unknown", "error": ""}
     try:
-        import opendeepsearch
-        return True
-    except ImportError as e:
-        log.debug(f"ODS not available: {e}")
-        return False
+        import opendeepsearch as ods
+        info["import"] = True
+        info["version"] = getattr(ods, "__version__", "unknown")
+        try:
+            from opendeepsearch import OpenDeepSearchTool  # noqa
+            info["tool"] = True
+        except Exception as e:
+            info["error"] = f"tool import: {e}"
     except Exception as e:
-        log.warning(f"ODS check error: {e}")
-        return False
+        info["error"] = f"module import: {e}"
+    return info
+
+def _ods_env_ready():
+    # Đồng bộ với news_agent._ensure_ods_env_or_raise
+    llm_provider = ("openrouter" if "openrouter" in (ODS_MODEL.split("/",1)[0] if "/" in ODS_MODEL else ODS_MODEL).lower() else "other")
+    missing = []
+    if llm_provider == "openrouter" and not OPENROUTER_API_KEY:
+        missing.append("OPENROUTER_API_KEY")
+    if SEARXNG_INSTANCE_URL:
+        # searxng: OK nếu có URL (API key optional)
+        pass
+    else:
+        # serper default
+        if not SERPER_API_KEY:
+            missing.append("SERPER_API_KEY")
+    return (len(missing) == 0, missing)
 
 app = Flask(__name__, static_url_path="", static_folder=".")
 CORS(app)
@@ -101,9 +119,8 @@ news_mode = "none"
 if SSA_News is not None and FIREWORKS_API_KEY:
     try:
         secrets = {"NEWS_API_KEY": NEWS_API_KEY, "FIREWORKS_API_KEY": FIREWORKS_API_KEY}
-        interval = int(os.getenv("NEWS_MIN_INTERVAL_SEC", "3600"))
         news_agent = SSA_News(secrets, None)
-        news_agent.update_interval = interval
+        news_agent.update_interval = int(os.getenv("NEWS_MIN_INTERVAL_SEC", "3600"))
         news_mode = "ssa"
         log.info("News agent initialized (SSA).")
     except Exception as e:
@@ -117,9 +134,8 @@ if SummarizerService is not None:
     except Exception as e:
         log.error("Summarizer init failed: %s", e)
 
-# ---------------- Utils ----------------
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+# ===== Helpers =====
+def _now_iso(): return datetime.now(timezone.utc).isoformat()
 
 def _serialize_articles(articles: List[dict]) -> List[dict]:
     if not articles: return []
@@ -148,11 +164,12 @@ def _sse(payload: Any) -> str:
         log.error("SSE JSON error: %s", e)
         return "data: {\"type\":\"error\",\"name\":\"SERIALIZATION\"}\n\n"
 
-# --------------- Routes ----------------
+# ===== Routes =====
 @app.route("/")
 def root():
     return send_from_directory(".", "news_dashboard.html")
 
+# News API
 @app.route("/api/news")
 def api_news():
     if not news_agent:
@@ -169,6 +186,7 @@ def api_news():
         log.error("/api/news error: %s", e, exc_info=True)
         return jsonify({"status":"error","message":str(e)}), 500
 
+# Summarize (cache)
 @app.route("/api/summarize", methods=["POST"])
 def api_summarize():
     if summarizer is None:
@@ -181,13 +199,11 @@ def api_summarize():
     title = str(data.get("title","")).strip()
     desc  = str(data.get("description","") or data.get("summary","")).strip()
     link  = str(data.get("url","") or data.get("link","")).strip()
-
     if not title and not desc and not link:
         return jsonify({"status":"error","message":"title/description/link required"}), 400
 
     key = _hash_key("summarize", title, desc, link)
     cache_path = CACHE_DIR / f"{key}.json"
-
     if cache_path.exists():
         cached = json.loads(cache_path.read_text())
         return jsonify({"status":"success","summary": cached.get("summary", "")})
@@ -200,6 +216,7 @@ def api_summarize():
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
+# Deep Analysis (SSE) — **KHÔNG FALLBACK**
 @app.route("/api/deep_analyze_sse")
 def api_deep_analyze_sse():
     title = str(request.args.get("title","")).strip()
@@ -210,68 +227,78 @@ def api_deep_analyze_sse():
     cache_path = CACHE_DIR / f"{key}.json"
 
     def stream():
+        # Cache trước
         if cache_path.exists():
             cached = json.loads(cache_path.read_text())
             yield _sse({"type":"done", "analysis": cached.get("analysis", "")})
             return
 
-        yield _sse({"type":"stage","stage":"init","detail":"Preparing analysis…"})
-        
+        # Diagnostics ODS
+        modules = _check_ods_modules()
+        ready, missing = _ods_env_ready()
+
+        yield _sse({"type":"stage","stage":"init","detail":"Preparing deep analysis…"})
+        yield _sse({"type":"stage","stage":"diag","detail":f"ods_import={modules['import']} tool={modules['tool']} v={modules['version']} ready={ready} missing={','.join(missing)}"})
+
         if summarizer is None:
             yield _sse({"type":"error","message":"Analyzer unavailable"})
             return
-        
-        ods_available = _check_ods_availability()
-        
+
+        if not modules["import"] or not modules["tool"] or not ready:
+            yield _sse({"type":"error","message": f"ODS not ready: missing={','.join(missing)} err={modules['error']}"})
+            return
+
+        # Stages
+        yield _sse({"type":"stage","stage":"search_provider","detail":"Searching…"})
+        yield _sse({"type":"stage","stage":"reranker","detail":"Reranking…"})
+        yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing…"})
+
         try:
-            if ods_available:
-                yield _sse({"type":"stage","stage":"search_provider","detail":"Running deep analysis with ODS…"})
-                yield _sse({"type":"stage","stage":"reranker","detail":"Searching and reranking…"})
-                yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing analysis…"})
-                
-                try:
-                    result = summarizer.deep_analyze_only(title, desc, link)
-                    cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
-                    yield _sse({"type":"done","analysis": result})
-                    return
-                except Exception as e:
-                    log.warning("Deep analysis failed, falling back to summary: %s", e)
-                    yield _sse({"type":"stage","stage":"fallback","detail":"Deep analysis failed, using summarization…"})
-            else:
-                yield _sse({"type":"stage","stage":"fallback","detail":"ODS unavailable, using summarization…"})
-            
-            result = summarizer.summarize_only(title, desc, link)
-            result = "**Note:** Deep analysis unavailable, using summarization instead.\n\n" + result
+            result = summarizer.deep_analyze_only(title, desc, link)
             cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
             yield _sse({"type":"done","analysis": result})
-            
         except Exception as e:
-            log.error("All analysis methods failed: %s", e, exc_info=True)
-            yield _sse({"type":"error","message": f"Analysis failed: {e}"})
+            yield _sse({"type":"error","message": f"Deep analysis failed: {e}"})
 
     return Response(stream(), mimetype="text/event-stream", headers={
         "Cache-Control":"no-cache",
         "X-Accel-Buffering":"no"
     })
 
+# Status
 @app.route("/api/status")
 def api_status():
-    ods_available = _check_ods_availability()
+    modules = _check_ods_modules()
+    ready, missing = _ods_env_ready()
     return jsonify({
         "status": "ok",
-        "timestamp": _now_iso(),
-        "version": "2.5-cache-fallback",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "no-fallback-deep-v1",
         "components": {
             "fireworks_model": FIREWORKS_MODEL,
-            "model_configured": bool(FIREWORKS_API_KEY),
-            "news_agent": {"available": bool(news_agent), "mode": news_mode},
-            "summarization": {
-                "available": bool(summarizer) and (bool(FIREWORKS_API_KEY) or ods_available),
-                "service": "Fireworks summary + ODS deep analysis (SSE) with fallback",
-                "ods_available": bool(ods_available),
+            "news_agent": {"available": bool(SSA_News is not None)},
+            "summarizer_loaded": bool(SummarizerService is not None),
+            "ods": {
+                "import": modules["import"],
+                "tool": modules["tool"],
+                "version": modules["version"],
+                "ready": ready,
+                "missing_env": missing,
+                "model": ODS_MODEL,
+                "searxng": bool(SEARXNG_INSTANCE_URL),
             }
         }
     })
+
+# Clear cache (tiện test trên Render)
+@app.route("/api/clear_cache", methods=["POST"])
+def api_clear_cache():
+    n = 0
+    for p in CACHE_DIR.glob("*.json"):
+        try:
+            p.unlink(); n += 1
+        except: pass
+    return jsonify({"status":"ok","cleared":n})
 
 @app.errorhandler(404)
 def nf(_): return jsonify({"status":"error","message":"Endpoint not found"}), 404
@@ -281,4 +308,8 @@ def ie(_): return jsonify({"status":"error","message":"Internal server error"}),
 
 if __name__ == "__main__":
     log.info("Starting server at http://localhost:3000 | model=%s", FIREWORKS_MODEL)
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT","3000")), debug=False, threaded=True)
+    from waitress import serve  # optional local; if not installed, fallback
+    try:
+        serve(app, host="0.0.0.0", port=int(os.getenv("PORT","3000")))
+    except Exception:
+        app.run(host="0.0.0.0", port=int(os.getenv("PORT","3000")), debug=False, threaded=True)
