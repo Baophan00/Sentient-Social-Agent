@@ -22,7 +22,7 @@ requests-oauthlib==2.0.0
 oauthlib==3.3.1
 
 # --- ODS (deep analyze) ---
-opendeepsearch>=0.1.23,<0.2.0
+opendeepsearch @ git+https://github.com/sentient-agi/OpenDeepSearch.git
 aiohttp==3.12.15
 aiosignal==1.4.0
 aiohappyeyeballs==2.6.1
@@ -33,3 +33,6 @@ idna==3.10
 charset-normalizer==3.4.3
 urllib3==2.5.0
 certifi==2025.8.3
+crawl4ai>=0.7.0
+playwright>=1.45.0
+
