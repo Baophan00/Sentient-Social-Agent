@@ -21,7 +21,11 @@ tweepy==4.16.0
 requests-oauthlib==2.0.0
 oauthlib==3.3.1
 
-# --- ODS (Deep Analyze) + deps (async stack) ---
+# --- ODS (Deep Analyze) ---
+# CÀI TỪ ZIP – tránh lỗi git clone trên Render
+opendeepsearch @ https://github.com/opendeepsearch/opendeepsearch/archive/refs/heads/main.zip
+
+# Một số deps async thường kèm theo (an toàn khi pin)
 aiohttp==3.12.15
 aiosignal==1.4.0
 aiohappyeyeballs==2.6.1
@@ -32,6 +36,3 @@ idna==3.10
 charset-normalizer==3.4.3
 urllib3==2.5.0
 certifi==2025.8.3
-
-# Install OpenDeepSearch from GitHub (public)
-git+https://github.com/opendeepsearch/opendeepsearch.git@main
