@@ -1,4 +1,3 @@
-# web_server.py
 import os, sys, json, logging, hashlib
 from typing import List, Any
 from datetime import datetime, timezone
@@ -25,13 +24,14 @@ ODS_MODEL             = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "op
 ROOT = os.path.abspath(os.path.dirname(__file__))
 SRC_PATH = os.path.join(ROOT, "src")
 
-# Fix PYTHONPATH
+# Fix path issues cho Render
 paths_to_add = [
     ROOT,
     SRC_PATH,
     os.path.join(ROOT, "src", "agent"),
     os.path.join(ROOT, "src", "agent", "agent_tools")
 ]
+
 for path in paths_to_add:
     if os.path.isdir(path) and path not in sys.path:
         sys.path.insert(0, path)
@@ -79,29 +79,23 @@ def _hash_key(*parts: str) -> str:
     raw = "||".join([p.strip() for p in parts if p])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
-def _check_torch_status():
-    try:
-        import torch
-        return f"installed_v{torch.__version__}"
-    except ImportError:
-        return "not_installed"
-    except Exception as e:
-        return f"error: {e}"
-
+# ---- Check ODS availability (Torch optional) ----
 def _check_ods_availability():
-    """Check ODS presence WITHOUT requiring torch."""
+    """Check ODS availability without requiring Torch (Torch optional)."""
     try:
-        import opendeepsearch  # noqa
-        from opendeepsearch import OpenDeepSearchTool  # noqa
+        import opendeepsearch
         return True
-    except Exception as e:
+    except ImportError as e:
         log.debug(f"ODS not available: {e}")
+        return False
+    except Exception as e:
+        log.warning(f"ODS check error: {e}")
         return False
 
 app = Flask(__name__, static_url_path="", static_folder=".")
 CORS(app)
 
-# Init news agent (optional)
+# Init news agent
 news_agent = None
 news_mode = "none"
 if SSA_News is not None and FIREWORKS_API_KEY:
@@ -128,15 +122,12 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 def _serialize_articles(articles: List[dict]) -> List[dict]:
-    if not articles:
-        return []
+    if not articles: return []
     uniq, out = set(), []
     for a in articles:
-        if not isinstance(a, dict):
-            continue
+        if not isinstance(a, dict): continue
         aid = a.get("id") or a.get("link") or a.get("title")
-        if not aid or aid in uniq:
-            continue
+        if not aid or aid in uniq: continue
         uniq.add(aid)
         out.append({
             "id": str(aid),
@@ -162,7 +153,6 @@ def _sse(payload: Any) -> str:
 def root():
     return send_from_directory(".", "news_dashboard.html")
 
-# ---------- News ----------
 @app.route("/api/news")
 def api_news():
     if not news_agent:
@@ -179,7 +169,6 @@ def api_news():
         log.error("/api/news error: %s", e, exc_info=True)
         return jsonify({"status":"error","message":str(e)}), 500
 
-# ---------- Summarize ----------
 @app.route("/api/summarize", methods=["POST"])
 def api_summarize():
     if summarizer is None:
@@ -211,7 +200,6 @@ def api_summarize():
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
-# ---------- Deep Analysis (SSE) ----------
 @app.route("/api/deep_analyze_sse")
 def api_deep_analyze_sse():
     title = str(request.args.get("title","")).strip()
@@ -228,17 +216,19 @@ def api_deep_analyze_sse():
             return
 
         yield _sse({"type":"stage","stage":"init","detail":"Preparing analysis…"})
+        
         if summarizer is None:
             yield _sse({"type":"error","message":"Analyzer unavailable"})
             return
-
+        
         ods_available = _check_ods_availability()
-
+        
         try:
             if ods_available:
                 yield _sse({"type":"stage","stage":"search_provider","detail":"Running deep analysis with ODS…"})
                 yield _sse({"type":"stage","stage":"reranker","detail":"Searching and reranking…"})
                 yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing analysis…"})
+                
                 try:
                     result = summarizer.deep_analyze_only(title, desc, link)
                     cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
@@ -246,16 +236,15 @@ def api_deep_analyze_sse():
                     return
                 except Exception as e:
                     log.warning("Deep analysis failed, falling back to summary: %s", e)
-                    yield _sse({"type":"stage","stage":"fallback","detail":"Deep analysis failed, using enhanced summarization…"})
+                    yield _sse({"type":"stage","stage":"fallback","detail":"Deep analysis failed, using summarization…"})
             else:
-                yield _sse({"type":"stage","stage":"fallback","detail":"ODS unavailable, using enhanced summarization…"})
-
+                yield _sse({"type":"stage","stage":"fallback","detail":"ODS unavailable, using summarization…"})
+            
             result = summarizer.summarize_only(title, desc, link)
-            fallback_note = "**Note:** Deep analysis unavailable, using enhanced summarization.\n\n"
-            result = fallback_note + result
+            result = "**Note:** Deep analysis unavailable, using summarization instead.\n\n" + result
             cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
             yield _sse({"type":"done","analysis": result})
-
+            
         except Exception as e:
             log.error("All analysis methods failed: %s", e, exc_info=True)
             yield _sse({"type":"error","message": f"Analysis failed: {e}"})
@@ -265,10 +254,8 @@ def api_deep_analyze_sse():
         "X-Accel-Buffering":"no"
     })
 
-# ---------- Status ----------
 @app.route("/api/status")
 def api_status():
-    torch_status = _check_torch_status()
     ods_available = _check_ods_availability()
     return jsonify({
         "status": "ok",
@@ -280,57 +267,11 @@ def api_status():
             "news_agent": {"available": bool(news_agent), "mode": news_mode},
             "summarization": {
                 "available": bool(summarizer) and (bool(FIREWORKS_API_KEY) or ods_available),
-                "service": "Fireworks summary + ODS on-demand (SSE) with fallback",
+                "service": "Fireworks summary + ODS deep analysis (SSE) with fallback",
                 "ods_available": bool(ods_available),
-                "torch_status": torch_status
-            },
-            "ods": {
-                "available": bool(ods_available),
-                "model": ODS_MODEL
             }
         }
     })
-
-# ---------- Debug ----------
-@app.route("/api/debug")
-def api_debug():
-    return jsonify({
-        "ROOT": ROOT,
-        "SRC_PATH": SRC_PATH,
-        "sys_path": sys.path[:5],
-        "cache_dir": str(CACHE_DIR),
-        "cache_exists": CACHE_DIR.exists(),
-        "env_vars": {
-            "PORT": os.getenv("PORT"),
-            "PYTHONPATH": os.getenv("PYTHONPATH"),
-            "FIREWORKS_KEY_SET": bool(FIREWORKS_API_KEY)
-        }
-    })
-
-@app.route("/api/debug/torch")
-def debug_torch():
-    result = {}
-    try:
-        import torch
-        result["torch"] = {
-            "available": True,
-            "version": torch.__version__,
-            "cuda_available": torch.cuda.is_available() if hasattr(torch, 'cuda') else False
-        }
-    except Exception as e:
-        result["torch"] = {"available": False, "error": str(e)}
-    try:
-        import opendeepsearch
-        result["opendeepsearch"] = {"available": True, "version": getattr(opendeepsearch, "__version__", "unknown")}
-    except Exception as e:
-        result["opendeepsearch"] = {"available": False, "error": str(e)}
-    try:
-        from opendeepsearch import OpenDeepSearchTool
-        _ = OpenDeepSearchTool(model_name="openrouter/google/gemini-2.0-flash-001")
-        result["ods_tool"] = {"available": True}
-    except Exception as e:
-        result["ods_tool"] = {"available": False, "error": str(e)}
-    return jsonify(result)
 
 @app.errorhandler(404)
 def nf(_): return jsonify({"status":"error","message":"Endpoint not found"}), 404
