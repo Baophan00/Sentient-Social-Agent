@@ -53,6 +53,13 @@
       max-width:1400px;
       margin:0 auto;
       padding:24px 32px 32px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .main-content{
+      flex: 1;
     }
     
     header{
@@ -495,6 +502,70 @@
       border-left: 3px solid var(--accent);
     }
     
+    /* FOOTER STYLES */
+    .footer {
+      margin-top: 40px;
+      padding: 24px 0 16px;
+      border-top: 1px solid var(--edge);
+      text-align: center;
+    }
+    
+    .footer-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 20px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      background: rgba(63, 185, 80, 0.05);
+      border: 1px solid rgba(63, 185, 80, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .footer-link::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(63, 185, 80, 0.1), transparent);
+      transition: left 0.6s ease;
+    }
+    
+    .footer-link:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: rgba(63, 185, 80, 0.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(63, 185, 80, 0.2);
+    }
+    
+    .footer-link:hover::before {
+      left: 100%;
+    }
+    
+    .lightning-icon {
+      display: inline-block;
+      animation: lightning 2s ease-in-out infinite;
+    }
+    
+    @keyframes lightning {
+      0%, 100% { 
+        transform: scale(1); 
+        filter: brightness(1);
+      }
+      50% { 
+        transform: scale(1.1); 
+        filter: brightness(1.3);
+      }
+    }
+    
     /* Enhanced responsive design */
     @media (max-width: 768px) {
       .wrap {
@@ -533,60 +604,80 @@
         font-size: 14px;
         padding: 10px 14px;
       }
+      
+      .footer {
+        margin-top: 24px;
+        padding: 16px 0 12px;
+      }
+      
+      .footer-link {
+        font-size: 12px;
+        padding: 6px 12px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <div class="logo"></div>
-      <h1>Dobby News Agent</h1>
-      <a href="https://x.com/dobbynewsagent" target="_blank" rel="noopener noreferrer" class="x-icon" title="Follow @dobbynewsagent on X">
-        <svg viewBox="0 0 24 24">
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-        </svg>
-      </a>
-      <span class="pill" id="status-pill">checking…</span>
-    </header>
+    <div class="main-content">
+      <header>
+        <div class="logo"></div>
+        <h1>Dobby News Agent</h1>
+        <a href="https://x.com/dobbynewsagent" target="_blank" rel="noopener noreferrer" class="x-icon" title="Follow @dobbynewsagent on X">
+          <svg viewBox="0 0 24 24">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+        </a>
+        <span class="pill" id="status-pill">checking…</span>
+      </header>
 
-    <div class="layout">
-      <!-- Left -->
-      <div class="news-wrap">
-        <div class="card news-card">
-          <div class="hd">
-            <h2>📰 News Feed</h2>
-            <div class="tabs" id="tabs">
-              <div class="tab active" data-cat="">All</div>
-              <div class="tab" data-cat="tech">Tech</div>
-              <div class="tab" data-cat="crypto">Crypto</div>
-              <div class="tab" data-cat="finance">Finance</div>
-              <div class="tab" data-cat="ai">AI</div>
+      <div class="layout">
+        <!-- Left -->
+        <div class="news-wrap">
+          <div class="card news-card">
+            <div class="hd">
+              <h2>📰 News Feed</h2>
+              <div class="tabs" id="tabs">
+                <div class="tab active" data-cat="">All</div>
+                <div class="tab" data-cat="tech">Tech</div>
+                <div class="tab" data-cat="crypto">Crypto</div>
+                <div class="tab" data-cat="finance">Finance</div>
+                <div class="tab" data-cat="ai">AI</div>
+              </div>
             </div>
+            <div class="news-scroll" id="news-list"></div>
           </div>
-          <div class="news-scroll" id="news-list"></div>
         </div>
-      </div>
 
-      <!-- Right -->
-      <div class="col-summary">
-        <div class="card">
-          <div class="hd"><h2>🧠 Summary & Analysis</h2></div>
-          <div class="bd">
-            <div class="summary-box">
-              <div class="mascot"><img src="assets/mascot.png" alt="mascot" /></div>
-              <div style="flex:1">
-                <div id="article-title" class="article-title" style="display:none"></div>
-                <div id="summary" class="summary-content empty">Pick a news item and click "Summarize".</div>
-                <div class="cta-row" id="deep-row" style="display:none">
-                  <button id="btn-deep" class="btn">🔎 Deep Analysis</button>
+        <!-- Right -->
+        <div class="col-summary">
+          <div class="card">
+            <div class="hd"><h2>🧠 Summary & Analysis</h2></div>
+            <div class="bd">
+              <div class="summary-box">
+                <div class="mascot"><img src="assets/mascot.png" alt="mascot" /></div>
+                <div style="flex:1">
+                  <div id="article-title" class="article-title" style="display:none"></div>
+                  <div id="summary" class="summary-content empty">Pick a news item and click "Summarize".</div>
+                  <div class="cta-row" id="deep-row" style="display:none">
+                    <button id="btn-deep" class="btn">🔎 Deep Analysis</button>
+                  </div>
+                  <div id="deep-status" class="status-line" style="display:none"></div>
                 </div>
-                <div id="deep-status" class="status-line" style="display:none"></div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div> <!-- layout -->
+      </div> <!-- layout -->
+    </div> <!-- main-content -->
+    
+    <!-- FOOTER -->
+    <footer class="footer">
+      <a href="https://www.sentient.xyz/builder-suite" target="_blank" rel="noopener noreferrer" class="footer-link">
+        <span class="lightning-icon">⚡</span>
+        Powered by Sentient Open-Source AI Ecosystem
+      </a>
+    </footer>
   </div> <!-- wrap -->
 
   <script>
@@ -745,6 +836,14 @@
 
       // Bật status + spinner
       startSpinner("Preparing");
+
+      // FIX: Auto-scroll to summary on mobile when doing deep analysis
+      if (window.innerWidth <= 1024) {
+        document.querySelector('.col-summary').scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
 
       // đóng SSE cũ nếu có
       try { sseSource?.close(); } catch {}
