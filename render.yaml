@@ -1,57 +1,31 @@
 services:
-  # 🌐 Web service
   - type: web
     name: dobby-news-web
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip
+      pip install --upgrade pip setuptools wheel
       pip install -r requirements.txt
     startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-      # Tuỳ chọn: đóng auto-post ở web
-      - key: NEWS_AUTO_POST
-        value: "false"
     disk:
       name: data
       mountPath: /app/data
       sizeGB: 1
 
-  # ⚙️ Background worker
   - type: worker
     name: dobby-news-worker
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip
+      pip install --upgrade pip setuptools wheel
       pip install -r requirements.txt
     startCommand: python news_runner.py --loop
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-      # Gợi ý env tối thiểu cho worker (đặt trong Render dashboard)
-      # - key: NEWS_AUTO_POST
-      #   value: "true"
-      # - key: NEWS_CATEGORIES
-      #   value: tech,crypto,ai
-      # - key: FIREWORKS_API_KEY
-      #   sync: false
-      # - key: FIREWORKS_MODEL
-      #   value: accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new
-      # - key: TWITTER_CONSUMER_KEY
-      #   sync: false
-      # - key: TWITTER_CONSUMER_SECRET
-      #   sync: false
-      # - key: TWITTER_ACCESS_TOKEN
-      #   sync: false
-      # - key: TWITTER_ACCESS_TOKEN_SECRET
-      #   sync: false
-      # - key: TWITTER_BEARER_TOKEN
-      #   sync: false
-      # - key: ODS_MODEL
-      #   value: openrouter/google/gemini-2.0-flash-001
     disk:
       name: data
       mountPath: /app/data
