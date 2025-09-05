@@ -41,6 +41,8 @@ torch==2.7.1+cpu
 torchvision==0.22.1+cpu
 torchaudio==2.7.1+cpu
 
+# --- Logging (ODS dependency) ---
+loguru==0.7.2
 
 # --- ODS (deep analyze) - KHÔNG GHIM COMMIT HASH ---
 git+https://github.com/sentient-agi/OpenDeepSearch.git
