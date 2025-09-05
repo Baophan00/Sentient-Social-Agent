@@ -5,15 +5,19 @@ services:
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-    startCommand: gunicorn web_server:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt --no-cache-dir
+      mkdir -p data/cache_analysis
+    startCommand: gunicorn web_server:app --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT --max-requests 1000 --preload
+    healthCheckPath: /api/status
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11.9"
+      - key: PYTHONUNBUFFERED
+        value: "1"
     disk:
-      name: data
-      mountPath: /app/data
+      name: web-data
+      mountPath: /opt/render/project/src/data
       sizeGB: 1
 
   # ⚙️ Background worker
@@ -22,13 +26,16 @@ services:
     env: python
     plan: free
     buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt --no-cache-dir
+      mkdir -p data/cache_analysis
     startCommand: python news_runner.py --loop
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11.9"
+      - key: PYTHONUNBUFFERED
+        value: "1"
     disk:
-      name: data
-      mountPath: /app/data
+      name: worker-data
+      mountPath: /opt/render/project/src/data
       sizeGB: 1
