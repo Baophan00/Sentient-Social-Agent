@@ -24,29 +24,13 @@ ODS_MODEL             = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "op
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 SRC_PATH = os.path.join(ROOT, "src")
-
-# Fix path issues cho Render
-paths_to_add = [
-    ROOT,
-    SRC_PATH,
-    os.path.join(ROOT, "src", "agent"),
-    os.path.join(ROOT, "src", "agent", "agent_tools")
-]
-
-for path in paths_to_add:
-    if os.path.isdir(path) and path not in sys.path:
-        sys.path.insert(0, path)
+if os.path.isdir(SRC_PATH) and SRC_PATH not in sys.path:
+    sys.path.append(SRC_PATH)
 
 # ---- SSA News tool ----
 SSA_News = None
 try:
-    # Try multiple import paths
-    try:
-        from src.agent.agent_tools.news import News as SSA_News
-    except ImportError:
-        from agent.agent_tools.news import News as SSA_News
-    except ImportError:
-        from agent_tools.news import News as SSA_News
+    from src.agent.agent_tools.news import News as SSA_News  # type: ignore
     log.info("SSA News available.")
 except Exception as e:
     log.warning("SSA News not found: %s", e)
@@ -54,58 +38,26 @@ except Exception as e:
 # ---- Summarizer service ----
 SummarizerService = None
 try:
-    try:
-        from news_agent import SummarizerService
-    except ImportError:
-        from src.news_agent import SummarizerService
+    from news_agent import SummarizerService  # type: ignore
     log.info("SummarizerService ready.")
 except Exception as e:
     log.error("Failed to import SummarizerService: %s", e)
 
+# ODS availability
+ODS_AVAILABLE = False
+try:
+    import opendeepsearch  # type: ignore
+    ODS_AVAILABLE = True
+except Exception:
+    ODS_AVAILABLE = False
+
 # ---- Cache dirs ----
 CACHE_DIR = Path("data/cache_analysis")
-try:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    # Test write permissions
-    test_file = CACHE_DIR / "test.txt"
-    test_file.write_text("test")
-    test_file.unlink()
-    log.info(f"Cache directory ready: {CACHE_DIR}")
-except Exception as e:
-    log.error(f"Cannot create cache directory: {e}")
-    # Fallback to temp directory
-    import tempfile
-    CACHE_DIR = Path(tempfile.gettempdir()) / "ssa_cache"
-    CACHE_DIR.mkdir(exist_ok=True)
-    log.info(f"Using fallback cache: {CACHE_DIR}")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 def _hash_key(*parts: str) -> str:
     raw = "||".join([p.strip() for p in parts if p])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
-
-# Dynamic ODS/PyTorch availability check
-def _check_torch_status():
-    """Dynamic check for PyTorch availability"""
-    try:
-        import torch
-        return f"installed_v{torch.__version__}"
-    except ImportError:
-        return "not_installed"
-    except Exception as e:
-        return f"error: {e}"
-
-def _check_ods_availability():
-    """Dynamic check for ODS availability"""
-    try:
-        import torch  # Check torch first
-        import opendeepsearch  # Then check opendeepsearch
-        return True
-    except ImportError as e:
-        log.debug(f"ODS not available: {e}")
-        return False
-    except Exception as e:
-        log.warning(f"ODS check error: {e}")
-        return False
 
 app = Flask(__name__, static_url_path="", static_folder=".")
 CORS(app)
@@ -180,9 +132,9 @@ def api_news():
     limit = min(max(int(request.args.get("limit", 50)), 1), 100)
     try:
         if hasattr(news_agent, "get_latest_news"):
-            arts = news_agent.get_latest_news(max_total=limit, category=raw_cat)
+            arts = news_agent.get_latest_news(max_total=limit, category=raw_cat)  # type: ignore
         else:
-            arts = news_agent.fetch_rss_news(raw_cat, max_articles=limit)
+            arts = news_agent.fetch_rss_news(raw_cat, max_articles=limit)  # type: ignore
         return jsonify({"status":"success","source":"ssa","articles": _serialize_articles(arts)})
     except Exception as e:
         log.error("/api/news error: %s", e, exc_info=True)
@@ -220,7 +172,8 @@ def api_summarize():
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
-# ---------- Deep Analysis (with cache, SSE, fallback) ----------
+# ---------- Deep Analysis (with cache, SSE) ----------
+# Thay thế hoàn toàn route /api/deep_analyze_sse
 @app.route("/api/deep_analyze_sse")
 def api_deep_analyze_sse():
     title = str(request.args.get("title","")).strip()
@@ -239,20 +192,13 @@ def api_deep_analyze_sse():
 
         yield _sse({"type":"stage","stage":"init","detail":"Preparing analysis…"})
         
-        if summarizer is None:
-            yield _sse({"type":"error","message":"Analyzer unavailable"})
-            return
-        
-        # Check ODS availability dynamically
-        ods_available = _check_ods_availability()
-        
         try:
-            if ods_available:
-                # Try deep analysis with ODS
-                yield _sse({"type":"stage","stage":"search_provider","detail":"Running deep analysis with ODS…"})
-                yield _sse({"type":"stage","stage":"reranker","detail":"Searching and reranking…"})
-                yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing analysis…"})
-                
+            if summarizer is None:
+                raise RuntimeError("Analyzer unavailable")
+            
+            # Thử deep analysis trước
+            if ODS_AVAILABLE:
+                yield _sse({"type":"stage","stage":"deep","detail":"Running deep analysis with ODS…"})
                 try:
                     result = summarizer.deep_analyze_only(title, desc, link)
                     cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
@@ -260,16 +206,15 @@ def api_deep_analyze_sse():
                     return
                 except Exception as e:
                     log.warning("Deep analysis failed, falling back to summary: %s", e)
-                    yield _sse({"type":"stage","stage":"fallback","detail":"Deep analysis failed, using enhanced summarization…"})
+                    yield _sse({"type":"stage","stage":"fallback","detail":"Deep analysis failed, using summarization…"})
             else:
-                # ODS not available, use fallback
-                yield _sse({"type":"stage","stage":"fallback","detail":"ODS unavailable (missing PyTorch), using enhanced summarization…"})
+                yield _sse({"type":"stage","stage":"fallback","detail":"ODS unavailable, using summarization…"})
             
             # Fallback to basic summarization
             result = summarizer.summarize_only(title, desc, link)
             
             # Add fallback note
-            fallback_note = "**Note:** Deep analysis unavailable (PyTorch/ODS missing), using enhanced summarization instead.\n\n"
+            fallback_note = "**Note:** Deep analysis unavailable (using summarization instead).\n\n"
             result = fallback_note + result
             
             cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
@@ -287,73 +232,21 @@ def api_deep_analyze_sse():
 # ---------- Status ----------
 @app.route("/api/status")
 def api_status():
-    torch_status = _check_torch_status()
-    ods_available = _check_ods_availability()
-    
     return jsonify({
         "status": "ok",
         "timestamp": _now_iso(),
-        "version": "2.5-cache-fallback",
+        "version": "2.5-cache",
         "components": {
             "fireworks_model": FIREWORKS_MODEL,
             "model_configured": bool(FIREWORKS_API_KEY),
             "news_agent": {"available": bool(news_agent), "mode": news_mode},
             "summarization": {
-                "available": bool(summarizer) and (bool(FIREWORKS_API_KEY) or ods_available),
-                "service": "Fireworks summary + ODS on-demand (SSE) with fallback",
-                "ods_available": bool(ods_available),
-                "torch_status": torch_status
+                "available": bool(summarizer) and (bool(FIREWORKS_API_KEY) or ODS_AVAILABLE),
+                "service": "Fireworks summary + ODS on-demand (SSE)",
+                "ods_available": bool(ODS_AVAILABLE)
             }
         }
     })
-
-# ---------- Debug Routes ----------
-@app.route("/api/debug")
-def api_debug():
-    return jsonify({
-        "ROOT": ROOT,
-        "SRC_PATH": SRC_PATH, 
-        "sys_path": sys.path[:3],  # First 3 paths
-        "cache_dir": str(CACHE_DIR),
-        "cache_exists": CACHE_DIR.exists(),
-        "env_vars": {
-            "PORT": os.getenv("PORT"),
-            "PYTHONPATH": os.getenv("PYTHONPATH"),
-            "FIREWORKS_KEY_SET": bool(FIREWORKS_API_KEY)
-        }
-    })
-
-@app.route("/api/debug/torch")
-def debug_torch():
-    result = {}
-    
-    # Test torch import
-    try:
-        import torch
-        result["torch"] = {
-            "available": True,
-            "version": torch.__version__,
-            "cuda_available": torch.cuda.is_available() if hasattr(torch, 'cuda') else False
-        }
-    except Exception as e:
-        result["torch"] = {"available": False, "error": str(e)}
-    
-    # Test opendeepsearch import
-    try:
-        import opendeepsearch
-        result["opendeepsearch"] = {"available": True, "version": getattr(opendeepsearch, "__version__", "unknown")}
-    except Exception as e:
-        result["opendeepsearch"] = {"available": False, "error": str(e)}
-    
-    # Test actual ODS creation
-    try:
-        from opendeepsearch import OpenDeepSearchTool
-        tool = OpenDeepSearchTool(model_name="openrouter/google/gemini-2.0-flash-001")
-        result["ods_tool"] = {"available": True}
-    except Exception as e:
-        result["ods_tool"] = {"available": False, "error": str(e)}
-    
-    return jsonify(result)
 
 @app.errorhandler(404)
 def nf(_): return jsonify({"status":"error","message":"Endpoint not found"}), 404
