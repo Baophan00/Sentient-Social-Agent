@@ -35,11 +35,11 @@ charset-normalizer==3.4.3
 urllib3==2.5.0
 certifi==2025.8.3
 
-# --- Torch CPU (để ODS import được) ---
+# --- PyTorch (CPU-only for Render free plan) - Install before ODS ---
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
-torchaudio==2.5.1+cpu
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+torchaudio==2.7.1+cpu
 
 
 # --- ODS (deep analyze) - KHÔNG GHIM COMMIT HASH ---
