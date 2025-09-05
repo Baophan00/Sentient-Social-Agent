@@ -27,7 +27,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 SUMMARY_CACHE_TTL = int(os.getenv("SUMMARY_CACHE_TTL", "86400"))   # 24h
 DEEP_CACHE_TTL    = int(os.getenv("DEEP_CACHE_TTL",    "604800"))  # 7d
 
-# ---------- LLM param ENV (tóm tắt/phân tích) ----------
+# ---------- LLM param ENV ----------
 FW_SUMMARY_TEMP        = float(os.getenv("FW_SUMMARY_TEMP",        "0.25"))
 FW_SUMMARY_TOP_P       = float(os.getenv("FW_SUMMARY_TOP_P",       "0.9"))
 FW_SUMMARY_FREQ_PEN    = float(os.getenv("FW_SUMMARY_FREQUENCY_PENALTY", "0.0"))
@@ -74,9 +74,8 @@ def _apply_ods_patch():
 
     # already patched?
     if getattr(bc, "_ssa_patched", False):
-        # also ensure ods_agent picks up the patched one
         try:
-            import opendeepsearch.ods_agent as oa  # type: ignore
+            import opendeepsearch.ods_agent as oa  # ensure alias picks the patched one
             oa.build_context = bc.build_context
             oa._ssa_patched = True
         except Exception:
@@ -97,27 +96,29 @@ def _apply_ods_patch():
                     "videos": getattr(sources_result, "videos", []),
                 }
             except Exception:
-                # fall through; let original raise if necessary
                 pass
         return old_fn(sr, *args, **kwargs)
 
-    # patch the module function
     bc.build_context = wrapped
     bc._ssa_patched = True
 
-    # ALSO patch the alias inside ods_agent (it imported the old function at module import time)
     try:
-        import opendeepsearch.ods_agent as oa  # type: ignore
+        import opendeepsearch.ods_agent as oa  # also patch the alias
         oa.build_context = wrapped
         oa._ssa_patched = True
     except Exception:
         pass
 
+# Call patch ASAP when module is imported (idempotent)
+try:
+    _apply_ods_patch()
+except Exception:
+    pass
 
 def _clean_text(s: str) -> str:
     if not s: return ""
-    s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)   # bỏ heading markdown
-    s = re.sub(r"\n{3,}", "\n\n", s)                          # chuẩn hoá xuống dòng
+    s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)
+    s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
 def _wrap_section(title: str, body: str) -> str:
@@ -274,7 +275,7 @@ def ods_runtime_snapshot() -> dict:
     return {"search_provider": search_provider, "reranker": reranker, "llm_provider": llm_provider}
 
 def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Optional[Callable[[str], None]] = None) -> str:
-    # đảm bảo patch đã bật (trường hợp import thứ tự khác)
+    # Ensure patch stays applied even if import order changes
     try:
         _apply_ods_patch()
     except Exception:
@@ -310,8 +311,7 @@ def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Option
 
     query = ODS_ANALYSIS_PROMPT.format(title=title, description=description, link=link)
     try:
-        # Nếu bản ODS của bạn hỗ trợ tham số, có thể dùng:
-        # res = tool.forward(query, max_sources=1, pro_mode=False)  # "nhẹ" hơn
+        # res = tool.forward(query, max_sources=1, pro_mode=False)  # nếu ODS của bạn hỗ trợ tham số
         res = tool.forward(query)
         return _clean_text(str(res) if res is not None else "")
     except Exception as e:
@@ -323,7 +323,6 @@ class SummarizerService:
     def __init__(self, fireworks_model: Optional[str] = None):
         self.fireworks_model = (fireworks_model or FIREWORKS_MODEL).strip()
 
-    # ✅ Chỉ tóm tắt (được /api/summarize gọi) — có cache
     def summarize_only(self, title: str, description: str, link: str) -> str:
         key = _cache_key("summary", title, description, link)
         hit = _cache_load(key, SUMMARY_CACHE_TTL)
@@ -349,7 +348,6 @@ class SummarizerService:
         _cache_save(key, card)
         return card
 
-    # ✅ Chỉ phân tích sâu (được /api/deep_analyze_sse gọi) — có cache
     def deep_analyze_only(self, title: str, description: str, link: str) -> str:
         key = _cache_key("analysis", title, description, link)
         hit = _cache_load(key, DEEP_CACHE_TTL)
@@ -365,9 +363,7 @@ class SummarizerService:
         _cache_save(key, card)
         return card
 
-    # (Giữ để tương thích chỗ cũ nếu nơi nào đó còn gọi)
     def summarize_and_analyze(self, title: str, description: str, link: str) -> str:
-        # summary (cache riêng)
         s_key = _cache_key("summary", title, description, link)
         summary_block = _cache_load(s_key, SUMMARY_CACHE_TTL) or ""
         if not summary_block:
@@ -386,7 +382,6 @@ class SummarizerService:
             if summary_block:
                 _cache_save(s_key, summary_block)
 
-        # deep (cache riêng)
         a_key = _cache_key("analysis", title, description, link)
         analysis_block = _cache_load(a_key, DEEP_CACHE_TTL) or ""
         if not analysis_block:
@@ -400,10 +395,8 @@ class SummarizerService:
 
         if not summary_block and not analysis_block:
             raise RuntimeError("No summarizer/analyzer available")
-        # Ở đây 2 block đã là card; ghép gọn
         return "\n\n".join([b for b in [summary_block, analysis_block] if b.strip()])
 
-# Kept for compatibility
 class NewsAgent:
     def __init__(self, model: Optional[str] = None):
         self.model = (model or FIREWORKS_MODEL).strip()
