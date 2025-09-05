@@ -21,11 +21,8 @@ tweepy==4.16.0
 requests-oauthlib==2.0.0
 oauthlib==3.3.1
 
-# --- ODS (Deep Analyze) ---
-# CÀI TỪ ZIP – tránh lỗi git clone trên Render
-opendeepsearch @ https://github.com/opendeepsearch/opendeepsearch/archive/refs/heads/main.zip
-
-# Một số deps async thường kèm theo (an toàn khi pin)
+# --- ODS (deep analyze) ---
+opendeepsearch>=0.1.23,<0.2.0
 aiohttp==3.12.15
 aiosignal==1.4.0
 aiohappyeyeballs==2.6.1
