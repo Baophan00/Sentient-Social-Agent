@@ -43,6 +43,8 @@ torchaudio==2.7.1+cpu
 
 # --- Logging (ODS dependency) ---
 loguru==0.7.2
+nest_asyncio==1.6.0
+
 
 # --- ODS (deep analyze) - KHÔNG GHIM COMMIT HASH ---
 git+https://github.com/sentient-agi/OpenDeepSearch.git
