@@ -1,36 +1,31 @@
-# news_agent.py
 from __future__ import annotations
 import os, re, json, logging, requests, time, hashlib
 from pathlib import Path
 from typing import List, Optional, Callable
+from dotenv import load_dotenv
 
 log = logging.getLogger("ssa.news")
 if not log.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-# ===== ENV =====
+load_dotenv()
+
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "").strip()
 FIREWORKS_MODEL   = os.getenv("FIREWORKS_MODEL", "accounts/sentientfoundation/models/dobby-unhinged-llama-3-3-70b-new").strip()
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
-
-# ODS / Search stack
 SERPER_API_KEY        = os.getenv("SERPER_API_KEY", "").strip()
 SEARXNG_INSTANCE_URL  = os.getenv("SEARXNG_INSTANCE_URL", "").strip()
 SEARXNG_API_KEY       = os.getenv("SEARXNG_API_KEY", "").strip()
 JINA_API_KEY          = os.getenv("JINA_API_KEY", "").strip()
 OPENROUTER_API_KEY    = os.getenv("OPENROUTER_API_KEY", "").strip()
-
 ODS_MODEL = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
 
-# ===== Cache =====
 CACHE_DIR = Path("data/cache_analysis")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-SUMMARY_CACHE_TTL = int(os.getenv("SUMMARY_CACHE_TTL", "86400"))   # 24h
-DEEP_CACHE_TTL    = int(os.getenv("DEEP_CACHE_TTL",    "604800"))  # 7d
+SUMMARY_CACHE_TTL = int(os.getenv("SUMMARY_CACHE_TTL", "86400"))
+DEEP_CACHE_TTL    = int(os.getenv("DEEP_CACHE_TTL",    "604800"))
 
-# ===== LLM params (summary) =====
 FW_SUMMARY_TEMP        = float(os.getenv("FW_SUMMARY_TEMP",        "0.25"))
 FW_SUMMARY_TOP_P       = float(os.getenv("FW_SUMMARY_TOP_P",       "0.9"))
 FW_SUMMARY_FREQ_PEN    = float(os.getenv("FW_SUMMARY_FREQUENCY_PENALTY", "0.0"))
@@ -46,7 +41,6 @@ OA_SUMMARY_MAX_TOKENS  = int(os.getenv("OA_SUMMARY_MAX_TOKENS",    "700"))
 DIV = "────────────────────────────────"
 BUL = "•"
 
-# ===== ODS hot-patch: tolerate SearchResult objects =====
 def _to_dictish(x):
     try:
         if x is None:
@@ -64,30 +58,21 @@ def _to_dictish(x):
     return x
 
 def _apply_ods_patch():
-    """
-    Patch cả:
-      1) opendeepsearch.context_building.build_context.build_context
-      2) alias 'build_context' đã import trong opendeepsearch.ods_agent
-    để chấp nhận object SearchResult không có .get
-    """
     try:
-        import opendeepsearch.context_building.build_context as bc  # type: ignore
+        import opendeepsearch.context_building.build_context as bc
     except Exception:
         return
-
     if getattr(bc, "_ssa_patched", False):
         try:
-            import opendeepsearch.ods_agent as oa  # type: ignore
+            import opendeepsearch.ods_agent as oa
             oa.build_context = bc.build_context
             oa._ssa_patched = True
         except Exception:
             pass
         return
-
     old_fn = getattr(bc, "build_context", None)
     if not callable(old_fn):
         return
-
     def wrapped(sources_result, *args, **kwargs):
         sr = _to_dictish(sources_result)
         if not isinstance(sr, dict):
@@ -100,12 +85,10 @@ def _apply_ods_patch():
             except Exception:
                 pass
         return old_fn(sr, *args, **kwargs)
-
     bc.build_context = wrapped
     bc._ssa_patched = True
-
     try:
-        import opendeepsearch.ods_agent as oa  # type: ignore
+        import opendeepsearch.ods_agent as oa
         oa.build_context = wrapped
         oa._ssa_patched = True
     except Exception:
@@ -116,7 +99,6 @@ try:
 except Exception:
     pass
 
-# ===== Utils =====
 def _clean_text(s: str) -> str:
     if not s: return ""
     s = re.sub(r"^\s*#{1,6}\s*", "", s, flags=re.MULTILINE)
@@ -144,7 +126,6 @@ def _ensure_card(summary_block: str, analysis_block: str, link: str = "") -> str
         text = re.sub(r"(?i)^(market (impact|view))\s*:?\s*$", "**Market view**", text, flags=re.MULTILINE)
         text = re.sub(r"(?i)^sources?\s*:?\s*$", "**Sources**", text, flags=re.MULTILINE)
         parts.append(text)
-
     card_body = "\n\n".join([p for p in parts if p.strip()])
     card = f"{DIV}\n{card_body}\n\n{DIV}"
     if link:
@@ -185,7 +166,6 @@ ODS_ANALYSIS_PROMPT = (
     "Link: {link}\n"
 )
 
-# ===== Cache helpers =====
 def _cache_key(kind: str, title: str, description: str, link: str) -> str:
     raw = f"{kind}||{(title or '').strip()}||{(description or '').strip()}||{(link or '').strip()}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
@@ -213,7 +193,6 @@ def _cache_save(key: str, content: str) -> None:
     except Exception as e:
         log.warning("Cache write failed: %s", e)
 
-# ===== Fireworks / OpenAI =====
 def _fireworks_complete(prompt: str, model: Optional[str] = None) -> str:
     if not FIREWORKS_API_KEY:
         raise RuntimeError("FIREWORKS_API_KEY is missing")
@@ -258,11 +237,9 @@ def _openai_complete(prompt: str) -> str:
     txt = (ch.get("message") or {}).get("content", "") or ""
     return _clean_text(txt)
 
-# ===== ODS helpers =====
 def ods_runtime_snapshot() -> dict:
     search_provider = "searxng" if SEARXNG_INSTANCE_URL else "serper"
-    reranker = "jina" if JINA_API_KEY else "infinity"
-
+    reranker = "jina" if JINA_API_KEY else "none"
     prefix = (ODS_MODEL.split("/", 1)[0] if "/" in ODS_MODEL else ODS_MODEL).lower()
     if   "openrouter" in prefix: llm_provider = "openrouter"
     elif "fireworks"  in prefix or "fireworks_ai" in prefix: llm_provider = "fireworks"
@@ -275,25 +252,17 @@ def ods_runtime_snapshot() -> dict:
 def _ensure_ods_env_or_raise():
     snap = ods_runtime_snapshot()
     missing: List[str] = []
-    # LLM key check (tuỳ provider)
     if "openrouter" in snap["llm_provider"] and not OPENROUTER_API_KEY:
         missing.append("OPENROUTER_API_KEY")
-    # Search key check
     if snap["search_provider"] == "serper" and not SERPER_API_KEY:
         missing.append("SERPER_API_KEY")
-    # searxng không bắt buộc API key nhưng cần instance url
-    # Jina optional (nếu muốn dùng reranker=jina)
     if missing:
         raise RuntimeError(f"ODS missing env: {', '.join(missing)} (provider={snap['llm_provider']}, search={snap['search_provider']})")
 
 def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Optional[Callable[[str], None]] = None) -> str:
-    # giữ patch
     try: _apply_ods_patch()
     except Exception: pass
-
-    # kiểm tra ENV quan trọng cho ODS
     _ensure_ods_env_or_raise()
-
     try:
         from opendeepsearch import OpenDeepSearchTool
         import opendeepsearch as ods
@@ -301,21 +270,21 @@ def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Option
     except Exception as e:
         log.warning("ODS import failed: %s", e)
         return ""
-
     snap = ods_runtime_snapshot()
     if on_stage:
         for st in ("init","search_provider","reranker","llm_provider"):
             try: on_stage(st)
             except Exception: pass
-
     kwargs = {
-        "model_name": (ODS_MODEL or "openrouter/google/gemini-2.0-flash-001"),
-        "reranker": snap["reranker"]
+        "model_name": (ODS_MODEL or "openrouter/google/gemini-2.0-flash-001")
     }
+    if snap["reranker"] == "jina":
+        kwargs["reranker"] = "jina"
     if snap["search_provider"] == "searxng" and SEARXNG_INSTANCE_URL:
         kwargs.update({"search_provider": "searxng", "searxng_instance_url": SEARXNG_INSTANCE_URL})
         if SEARXNG_API_KEY: kwargs["searxng_api_key"] = SEARXNG_API_KEY
-
+    elif snap["search_provider"] == "serper" and SERPER_API_KEY:
+        kwargs.update({"search_provider": "serper", "serper_api_key": SERPER_API_KEY})
     tool = OpenDeepSearchTool(**kwargs)
     if getattr(tool, "is_initialized", True) is False:
         try:
@@ -323,18 +292,16 @@ def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Option
         except Exception as e:
             log.warning("ODS setup failed: %s", e)
             return ""
-
     query = ODS_ANALYSIS_PROMPT.format(title=title, description=description, link=link)
-    try:
-        # Một số phiên bản hỗ trợ tham số; nếu không, forward(query) vẫn OK
-        # res = tool.forward(query, max_sources=2, pro_mode=True)
-        res = tool.forward(query)
-        return _clean_text(str(res) if res is not None else "")
-    except Exception as e:
-        log.warning("ODS forward failed: %s", e)
-        return ""
+    for i in range(2):
+        try:
+            res = tool.forward(query)
+            return _clean_text(str(res) if res is not None else "")
+        except Exception as e:
+            log.warning("ODS forward attempt %d failed: %s", i+1, e)
+            time.sleep(1.5)
+    return ""
 
-# ===== Service =====
 class SummarizerService:
     def __init__(self, fireworks_model: Optional[str] = None):
         self.fireworks_model = (fireworks_model or FIREWORKS_MODEL).strip()
@@ -345,7 +312,6 @@ class SummarizerService:
         if hit:
             log.info("[CACHE] summary hit")
             return hit
-
         prompt = SUMMARY_PROMPT_TEMPLATE.format(title=title, description=description, link=link)
         txt = ""
         try:
@@ -359,7 +325,6 @@ class SummarizerService:
                 log.warning("OpenAI summary error: %s", e)
         if not txt:
             raise RuntimeError("No summary available")
-
         card = _ensure_card(summary_block=txt, analysis_block="", link=link)
         _cache_save(key, card)
         return card
@@ -370,18 +335,14 @@ class SummarizerService:
         if hit:
             log.info("[CACHE] analysis hit")
             return hit
-
         txt = _ods_deep_analysis(title, description, link)
         if not txt:
-            # Không fallback sang summary — đúng yêu cầu “chỉ deep”
             raise RuntimeError("Deep analysis unavailable (check ODS env / provider credentials / search key).")
-
         card = _ensure_card(summary_block="", analysis_block=txt, link=link)
         _cache_save(key, card)
         return card
 
     def summarize_and_analyze(self, title: str, description: str, link: str) -> str:
-        # Giữ để tương thích — KHÔNG dùng cho /api/deep_analyze_sse
         s_key = _cache_key("summary", title, description, link)
         summary_block = _cache_load(s_key, SUMMARY_CACHE_TTL) or ""
         if not summary_block:
@@ -399,7 +360,6 @@ class SummarizerService:
                     log.warning("OpenAI error (summary): %s", e)
             if summary_block:
                 _cache_save(s_key, summary_block)
-
         a_key = _cache_key("analysis", title, description, link)
         analysis_block = _cache_load(a_key, DEEP_CACHE_TTL) or ""
         if not analysis_block:
@@ -410,12 +370,10 @@ class SummarizerService:
                 log.warning("ODS error (analysis): %s", e)
             if analysis_block:
                 _cache_save(a_key, analysis_block)
-
         if not summary_block and not analysis_block:
             raise RuntimeError("No summarizer/analyzer available")
         return "\n\n".join([b for b in [summary_block, analysis_block] if b.strip()])
 
-# Back-compat
 class NewsAgent:
     def __init__(self, model: Optional[str] = None):
         self.model = (model or FIREWORKS_MODEL).strip()
