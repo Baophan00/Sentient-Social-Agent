@@ -34,6 +34,13 @@
       --blue: #007bff;
       --purple: #6f42c1;
       --yellow: #ffc107;
+
+      /* NEW: tăng rộng và cố định tối thiểu cho khung phải; thu nhỏ khung trái “một xíu” */
+      --summary-min: 600px;
+      --news-min: 440px;
+
+      /* NEW: dùng cùng một giới hạn chiều CAO cho 2 cột (giống news-scroll) */
+      --col-max: calc(100vh - 160px);
     }
     
     *{box-sizing:border-box}
@@ -84,7 +91,6 @@
       animation: logoGlow 4s ease-in-out infinite;
     }
     
-    /* Tia quét scanning */
     .logo::before {
       content: '';
       position: absolute;
@@ -92,64 +98,22 @@
       left: -50%;
       width: 200%;
       height: 200%;
-      background: linear-gradient(
-        45deg, 
-        transparent 30%, 
-        rgba(255, 255, 255, 0.8) 50%, 
-        transparent 70%
-      );
+      background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.8) 50%, transparent 70%);
       animation: logoScan 3s linear infinite;
       transform-origin: center;
     }
-    
-    /* Hiệu ứng pulse ring */
     .logo::after {
       content: '';
       position: absolute;
-      top: -4px;
-      left: -4px;
-      right: -4px;
-      bottom: -4px;
+      top: -4px; left: -4px; right: -4px; bottom: -4px;
       border: 2px solid var(--accent);
       border-radius: 16px;
       opacity: 0;
       animation: logoPulse 2s ease-out infinite;
     }
-    
-    @keyframes logoScan {
-      0% {
-        transform: translate(-100%, -100%) rotate(45deg);
-      }
-      100% {
-        transform: translate(100%, 100%) rotate(45deg);
-      }
-    }
-    
-    @keyframes logoPulse {
-      0% {
-        transform: scale(1);
-        opacity: 0.6;
-      }
-      50% {
-        transform: scale(1.2);
-        opacity: 0.2;
-      }
-      100% {
-        transform: scale(1.4);
-        opacity: 0;
-      }
-    }
-    
-    @keyframes logoGlow {
-      0%, 100% {
-        box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-        filter: saturate(1.2) brightness(1.1);
-      }
-      50% {
-        box-shadow: 0 4px 16px rgba(40, 167, 69, 0.5), 0 0 20px rgba(0, 123, 255, 0.3);
-        filter: saturate(1.4) brightness(1.3);
-      }
-    }
+    @keyframes logoScan { 0%{transform: translate(-100%, -100%) rotate(45deg)} 100%{transform: translate(100%, 100%) rotate(45deg)} }
+    @keyframes logoPulse { 0%{transform: scale(1);opacity: .6} 50%{transform: scale(1.2);opacity:.2} 100%{transform: scale(1.4);opacity:0} }
+    @keyframes logoGlow { 0%,100%{box-shadow:0 2px 8px rgba(40,167,69,.3);filter:saturate(1.2) brightness(1.1)} 50%{box-shadow:0 4px 16px rgba(40,167,69,.5),0 0 20px rgba(0,123,255,.3);filter:saturate(1.4) brightness(1.3)} }
     
     h1{
       font-size:28px;
@@ -161,468 +125,121 @@
       background-clip: text;
     }
     
-    /* X (Twitter) Icon - Đặt sau logo và tiêu đề */
-    .x-icon {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      text-decoration: none;
-      box-shadow: 0 2px 8px rgba(29, 161, 242, 0.3);
-      position: relative;
-      overflow: hidden;
-    }
+    .x-icon { width:32px;height:32px;background:linear-gradient(135deg,#1da1f2 0%,#0d8bd9 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s cubic-bezier(.4,0,.2,1);text-decoration:none;box-shadow:0 2px 8px rgba(29,161,242,.3);position:relative;overflow:hidden }
+    .x-icon::before { content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transition:left .6s ease }
+    .x-icon:hover { transform:translateY(-2px) scale(1.05);box-shadow:0 6px 16px rgba(29,161,242,.4) }
+    .x-icon:hover::before { left:100% }
+    .x-icon svg { width:16px;height:16px;fill:#fff;transition:transform .3s ease }
+    .x-icon:hover svg { transform:scale(1.1) }
     
-    .x-icon::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-      transition: left 0.6s ease;
-    }
+    .pill{ font-size:12px;font-weight:600;padding:6px 12px;border:1px solid var(--edge);border-radius:16px;color:var(--text-secondary);background:var(--panel);margin-left:auto }
     
-    .x-icon:hover {
-      transform: translateY(-2px) scale(1.05);
-      box-shadow: 0 6px 16px rgba(29, 161, 242, 0.4);
-    }
-    
-    .x-icon:hover::before {
-      left: 100%;
-    }
-    
-    .x-icon svg {
-      width: 16px;
-      height: 16px;
-      fill: white;
-      transition: transform 0.3s ease;
-    }
-    
-    .x-icon:hover svg {
-      transform: scale(1.1);
-    }
-    
-    .pill{
-      font-size:12px;
-      font-weight:600;
-      padding:6px 12px;
-      border:1px solid var(--edge);
-      border-radius:16px;
-      color: var(--text-secondary);
-      background: var(--panel);
-      margin-left: auto; /* Đẩy status pill về bên phải */
-    }
-
-    /* layout - Tối ưu để hiển thị nhiều tin hơn */
+    /* layout - Chỉnh tỉ lệ cột: trái nhỏ hơn, phải rộng hơn + có min-width ổn định */
     .layout{
       display:grid;
-      grid-template-columns: 1.6fr 0.4fr;
+      grid-template-columns: minmax(var(--news-min), 1.1fr) minmax(var(--summary-min), 0.9fr);
       gap:24px;
       align-items:start;
       min-height: calc(100vh - 200px);
     }
-    @media (max-width:1024px){ 
-      .layout{grid-template-columns:1fr} 
-    }
-
-    .card{
-      background: var(--panel);
-      border:1px solid var(--edge);
-      border-radius:12px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
-      overflow:hidden;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      width: 100%;
-    }
+    @media (max-width:1024px){ .layout{grid-template-columns:1fr} }
     
-    .card:hover{
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(40, 167, 69, 0.1);
-      border-color: var(--accent);
-    }
+    .card{ background:var(--panel);border:1px solid var(--edge);border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08),0 1px 4px rgba(0,0,0,.04);overflow:hidden;transition:all .3s cubic-bezier(.4,0,.2,1);width:100% }
+    .card:hover{ transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.12),0 2px 8px rgba(40,167,69,.1);border-color:var(--accent) }
+    .card .hd{ padding:16px 20px;border-bottom:1px solid var(--edge);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(40,167,69,.05) 0%,rgba(0,123,255,.03) 100%) }
+    .card .hd h2{ font-size:16px;font-weight:600;margin:0;color:var(--text);letter-spacing:.5px }
+    .card .bd{ padding:16px }
     
-    .card .hd{
-      padding:16px 20px;
-      border-bottom:1px solid var(--edge);
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      background: linear-gradient(135deg, rgba(40, 167, 69, 0.05) 0%, rgba(0, 123, 255, 0.03) 100%);
-    }
+    .news-wrap{ display:flex;flex-direction:column;gap:24px;width:100% }
     
-    .card .hd h2{
-      font-size:16px;
-      font-weight:600;
-      margin:0;
-      color: var(--text);
-      letter-spacing: 0.5px;
-    }
+    .tabs{ display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 12px }
+    .tab{ padding:8px 16px;border:1px solid var(--edge);border-radius:20px;color:var(--muted);cursor:pointer;user-select:none;font-weight:500;font-size:13px;transition:all .2s ease;background:var(--card) }
+    .tab:hover{ color:var(--text-secondary);border-color:var(--accent);background:rgba(40,167,69,.08) }
+    .tab.active{ color:#fff;background:linear-gradient(135deg,var(--accent) 0%,var(--accent-secondary) 100%);border-color:transparent;font-weight:600;box-shadow:0 2px 8px rgba(40,167,69,.3) }
     
-    .card .bd{padding:16px}
-
-    .news-wrap{
-      display:flex;
-      flex-direction:column;
-      gap:24px;
-      width: 100%;
-    }
-    
-    .tabs{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      padding:0 16px 12px;
-    }
-    
-    .tab{
-      padding:8px 16px;
-      border:1px solid var(--edge);
-      border-radius:20px;
-      color: var(--muted);
-      cursor:pointer;
-      user-select:none;
-      font-weight:500;
-      font-size:13px;
-      transition: all 0.2s ease;
-      background: var(--card);
-    }
-    
-    .tab:hover{
-      color: var(--text-secondary);
-      border-color: var(--accent);
-      background: rgba(40, 167, 69, 0.08);
-    }
-    
-    .tab.active{
-      color: #fff;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-      border-color:transparent;
-      font-weight:600;
-      box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-    }
-
     .news-scroll{
       padding:12px;
-      max-height: calc(100vh - 160px);
+      max-height: var(--col-max);
       overflow:auto;
       scrollbar-width: thin;
       scrollbar-color: var(--accent) var(--panel);
     }
+    .news-scroll::-webkit-scrollbar { width:6px }
+    .news-scroll::-webkit-scrollbar-track { background:var(--panel-secondary);border-radius:3px }
+    .news-scroll::-webkit-scrollbar-thumb { background:var(--accent);border-radius:3px }
+    @media (max-width:1024px){ .news-scroll{ max-height:none;overflow:visible } }
     
-    .news-scroll::-webkit-scrollbar {
-      width: 6px;
-    }
-    
-    .news-scroll::-webkit-scrollbar-track {
-      background: var(--panel-secondary);
-      border-radius: 3px;
-    }
-    
-    .news-scroll::-webkit-scrollbar-thumb {
-      background: var(--accent);
-      border-radius: 3px;
-    }
-    
-    @media (max-width:1024px){
-      .news-scroll{ 
-        max-height:none; 
-        overflow:visible; 
-      }
-    }
-
     .news-item{
-      padding:12px;
-      border:1px solid var(--edge);
-      border-radius:8px;
-      background: var(--card);
-      margin:8px 0;
-      display:grid;
-      grid-template-columns:auto 160px;
-      gap:12px;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
-      width: 100%;
+      padding:12px;border:1px solid var(--edge);border-radius:8px;background:var(--card);margin:8px 0;display:grid;grid-template-columns:auto 160px;gap:12px;transition:all .3s ease;position:relative;overflow:hidden;width:100%
     }
+    .news-item::before{ content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent) 0%,var(--blue) 50%,var(--purple) 100%);opacity:0;transition:opacity .3s ease }
+    .news-item:hover{ border-color:var(--accent);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08);background:var(--card-hover) }
+    .news-item:hover::before{ opacity:1 }
+    .news-item h3{ margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text);line-height:1.4 }
+    .news-meta{ font-size:12px;color:var(--muted);font-weight:500 }
     
-    .news-item::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent) 0%, var(--blue) 50%, var(--purple) 100%);
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
+    .btn{ cursor:pointer;border:1px solid var(--edge);background:var(--card);color:var(--text-secondary);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;transition:all .2s ease;text-decoration:none;display:inline-block;text-align:center }
+    .btn:hover{ border-color:var(--accent);background:rgba(40,167,69,.08);color:var(--text);transform:translateY(-1px) }
+    .btn.accent{ border:none;background:linear-gradient(135deg,var(--accent) 0%,var(--accent-secondary) 100%);color:#fff;font-weight:700;box-shadow:0 2px 8px rgba(40,167,69,.3) }
+    .btn.accent:hover{ background:linear-gradient(135deg,var(--accent-hover) 0%,var(--accent) 100%);box-shadow:0 4px 12px rgba(40,167,69,.4);transform:translateY(-2px) }
     
-    .news-item:hover {
-      border-color: var(--accent);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      background: var(--card-hover);
-    }
-    
-    .news-item:hover::before {
-      opacity: 1;
-    }
-    
-    .news-item h3{
-      margin:0 0 6px;
-      font-size:15px;
-      font-weight:600;
-      color: var(--text);
-      line-height: 1.4;
-    }
-    
-    .news-meta{
-      font-size:12px;
-      color: var(--muted);
-      font-weight: 500;
-    }
-    
-    .btn{
-      cursor:pointer;
-      border:1px solid var(--edge);
-      background: var(--card);
-      color: var(--text-secondary);
-      padding:8px 14px;
-      border-radius:8px;
-      font-size:13px;
-      font-weight:500;
-      transition: all 0.2s ease;
-      text-decoration: none;
-      display: inline-block;
-      text-align: center;
-    }
-    
-    .btn:hover{
-      border-color: var(--accent);
-      background: rgba(40, 167, 69, 0.08);
-      color: var(--text);
-      transform: translateY(-1px);
-    }
-    
-    .btn.accent{
-      border:none;
-      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
-      color: #fff;
-      font-weight:700;
-      box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-    }
-    
-    .btn.accent:hover{
-      background: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent) 100%);
-      box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
-      transform: translateY(-2px);
-    }
-
-    .col-summary .card{ 
-      position: sticky; 
-      top: 20px; 
-    }
-    
-    .summary-box{
-      display:flex;
-      gap:16px;
-      align-items:flex-start;
-    }
-    
-    .mascot{
-      width:48px;
-      height:48px;
-      border-radius:12px;
-      background: linear-gradient(135deg, var(--card) 0%, var(--panel) 100%);
-      border:1px solid var(--edge);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      overflow:hidden;
-      flex:0 0 auto;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    
-    .mascot img{
-      width:100%;
-      height:100%;
-      object-fit:cover;
-    }
+    .col-summary .card{ position:sticky;top:20px }
+    .summary-box{ display:flex;gap:16px;align-items:flex-start }
+    .mascot{ width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--card) 0%,var(--panel) 100%);border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;box-shadow:0 2px 8px rgba(0,0,0,.1) }
+    .mascot img{ width:100%;height:100%;object-fit:cover }
     
     /* Tiêu đề bài viết trong khung phân tích */
     .article-title{
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 12px;
-      padding: 10px 12px;
-      background: linear-gradient(135deg, rgba(40, 167, 69, 0.08) 0%, rgba(0, 123, 255, 0.04) 100%);
-      border-radius: 6px;
-      border-left: 3px solid var(--accent);
-      line-height: 1.4;
+      font-size:15px;font-weight:700;color:var(--accent);margin-bottom:12px;padding:10px 12px;
+      background:linear-gradient(135deg,rgba(40,167,69,.08) 0%,rgba(0,123,255,.04) 100%);
+      border-radius:6px;border-left:3px solid var(--accent);line-height:1.4
     }
+    .summary-content{ white-space:pre-wrap;font-size:14px;color:var(--text-secondary);flex:1;min-height:140px;line-height:1.6 }
     
-    .summary-content{
-      white-space:pre-wrap;
-      font-size:14px;
-      color: var(--text-secondary);
-      flex:1;
-      min-height:140px;
-      line-height: 1.6;
+    /* NEW: Chỉ ô phân tích cuộn và không kéo chiều cao vượt quá News */
+    .summary-scroll{
+      max-height: var(--col-max);
+      overflow: auto;
+      padding-right: 4px; /* tránh che chữ bởi scrollbar trên vài OS */
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent) var(--panel);
     }
+    .summary-scroll::-webkit-scrollbar { width:6px }
+    .summary-scroll::-webkit-scrollbar-track { background:var(--panel-secondary);border-radius:3px }
+    .summary-scroll::-webkit-scrollbar-thumb { background:var(--accent);border-radius:3px }
+    @media (max-width:1024px){ .summary-scroll{ max-height:none;overflow:visible } }
+    /* END NEW */
     
-    .empty{
-      color: var(--muted);
-      font-style:italic;
-    }
-
-    .cta-row{
-      margin-top:12px;
-      display:flex;
-      gap:10px;
-    }
-
-    .status-line{
-      margin-top:12px;
-      font-size:13px;
-      color: var(--muted);
-      font-style:italic;
-      user-select:none;
-      padding: 8px 12px;
-      background: rgba(40, 167, 69, 0.08);
-      border-radius: 6px;
-      border-left: 3px solid var(--accent);
-    }
+    /* WIDTH FIX: chặn nở ngang theo nội dung dài/URL */
+    .layout > .news-wrap, .layout > .col-summary { min-width:0 }
+    .summary-box > div { min-width:0 }
+    .summary-content, .news-item h3, .news-meta { overflow-wrap:anywhere; word-break:break-word; max-width:100% }
+    .summary-content a { word-break:break-all }
     
-    /* FOOTER STYLES */
-    .footer {
-      margin-top: 40px;
-      padding: 24px 0 16px;
-      border-top: 1px solid var(--edge);
-      text-align: center;
-    }
+    .empty{ color:var(--muted);font-style:italic }
+    .cta-row{ margin-top:12px;display:flex;gap:10px }
+    .status-line{ margin-top:12px;font-size:13px;color:var(--muted);font-style:italic;user-select:none;padding:8px 12px;background:rgba(40,167,69,.08);border-radius:6px;border-left:3px solid var(--accent) }
     
-    .footer-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 8px 16px;
-      border-radius: 20px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      background: rgba(40, 167, 69, 0.05);
-      border: 1px solid rgba(40, 167, 69, 0.2);
-      position: relative;
-      overflow: hidden;
-    }
+    .footer { margin-top:40px;padding:24px 0 16px;border-top:1px solid var(--edge);text-align:center }
+    .footer-link { display:inline-flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;padding:8px 16px;border-radius:20px;transition:all .3s cubic-bezier(.4,0,.2,1);background:rgba(40,167,69,.05);border:1px solid rgba(40,167,69,.2);position:relative;overflow:hidden }
+    .footer-link::before { content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(40,167,69,.1),transparent);transition:left .6s ease }
+    .footer-link:hover { color:var(--accent);border-color:var(--accent);background:rgba(40,167,69,.1);transform:translateY(-1px);box-shadow:0 4px 12px rgba(40,167,69,.2) }
+    .footer-link:hover::before { left:100% }
+    .lightning-icon { display:inline-block;animation:lightning 2s ease-in-out infinite }
+    @keyframes lightning { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.1);filter:brightness(1.3)} }
     
-    .footer-link::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: -100%;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(40, 167, 69, 0.1), transparent);
-      transition: left 0.6s ease;
-    }
-    
-    .footer-link:hover {
-      color: var(--accent);
-      border-color: var(--accent);
-      background: rgba(40, 167, 69, 0.1);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
-    }
-    
-    .footer-link:hover::before {
-      left: 100%;
-    }
-    
-    .lightning-icon {
-      display: inline-block;
-      animation: lightning 2s ease-in-out infinite;
-    }
-    
-    @keyframes lightning {
-      0%, 100% { 
-        transform: scale(1); 
-        filter: brightness(1);
-      }
-      50% { 
-        transform: scale(1.1); 
-        filter: brightness(1.3);
-      }
-    }
-    
-    /* Enhanced responsive design */
     @media (max-width: 768px) {
-      .wrap {
-        padding: 16px 20px;
-      }
-      
-      h1 {
-        font-size: 24px;
-      }
-      
-      .x-icon {
-        width: 28px;
-        height: 28px;
-      }
-      
-      .x-icon svg {
-        width: 14px;
-        height: 14px;
-      }
-      
-      .news-item {
-        grid-template-columns: 1fr;
-        gap: 12px;
-      }
-      
-      .tabs {
-        padding: 0 12px 8px;
-      }
-      
-      .tab {
-        padding: 6px 12px;
-        font-size: 12px;
-      }
-      
-      .article-title {
-        font-size: 14px;
-        padding: 10px 14px;
-      }
-      
-      .footer {
-        margin-top: 24px;
-        padding: 16px 0 12px;
-      }
-      
-      .footer-link {
-        font-size: 12px;
-        padding: 6px 12px;
-      }
-      
-      /* Mobile: Reset về behavior bình thường */
-      .news-card,
-      .col-summary .card {
-        min-height: auto;
-      }
-      
-      .summary-content {
-        max-height: 400px;
-      }
+      .wrap { padding:16px 20px }
+      h1 { font-size:24px }
+      .x-icon { width:28px;height:28px }
+      .x-icon svg { width:14px;height:14px }
+      .news-item { grid-template-columns:1fr;gap:12px }
+      .tabs { padding:0 12px 8px }
+      .tab { padding:6px 12px;font-size:12px }
+      .article-title { font-size:14px;padding:10px 14px }
+      .footer { margin-top:24px;padding:16px 0 12px }
+      .footer-link { font-size:12px;padding:6px 12px }
+      .news-card, .col-summary .card { min-height:auto }
     }
   </style>
 </head>
@@ -633,15 +250,13 @@
         <div class="logo"></div>
         <h1>Dobby News Agent</h1>
         <a href="https://x.com/dobbynewsagent" target="_blank" rel="noopener noreferrer" class="x-icon" title="Follow @dobbynewsagent on X">
-          <svg viewBox="0 0 24 24">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-          </svg>
+          <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
         </a>
         <span class="pill" id="status-pill">checking…</span>
       </header>
 
       <div class="layout">
-        <!-- Left - News Section (Wider for more articles) -->
+        <!-- Left - News Section -->
         <div class="news-wrap">
           <div class="card news-card">
             <div class="hd">
@@ -658,20 +273,24 @@
           </div>
         </div>
 
-        <!-- Right - Summary Section (Narrower) -->
+        <!-- Right - Summary Section -->
         <div class="col-summary">
           <div class="card">
             <div class="hd"><h2>🧠 Summary & Analysis</h2></div>
             <div class="bd">
               <div class="summary-box">
                 <div class="mascot"><img src="assets/mascot.png" alt="mascot" /></div>
-                <div style="flex:1">
-                  <div id="article-title" class="article-title" style="display:none"></div>
-                  <div id="summary" class="summary-content empty">Pick a news item and click "Summarize".</div>
-                  <div class="cta-row" id="deep-row" style="display:none">
-                    <button id="btn-deep" class="btn">🔎 Deep Analysis</button>
+                <div style="flex:1;min-width:0">
+                  <!-- NEW: bọc nội dung phân tích vào vùng cuộn -->
+                  <div class="summary-scroll">
+                    <div id="article-title" class="article-title" style="display:none"></div>
+                    <div id="summary" class="summary-content empty">Pick a news item and click "Summarize".</div>
+                    <div class="cta-row" id="deep-row" style="display:none">
+                      <button id="btn-deep" class="btn">🔎 Deep Analysis</button>
+                    </div>
+                    <div id="deep-status" class="status-line" style="display:none"></div>
                   </div>
-                  <div id="deep-status" class="status-line" style="display:none"></div>
+                  <!-- /summary-scroll -->
                 </div>
               </div>
             </div>
@@ -707,12 +326,8 @@
     function formatTimeUTC(isoString) {
       const date = new Date(isoString);
       return date.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short', 
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
         timeZone: 'UTC'
       }) + ' UTC';
     }
@@ -742,7 +357,7 @@
         const r = await fetch("/api/status"); const j = await r.json();
         const ok = j?.status === "ok";
         statusPill.textContent = ok ? "online" : "error";
-        statusPill.style.color = ok ? "#fff" : "#fff";
+        statusPill.style.color = "#fff";
         statusPill.style.background = ok
           ? "linear-gradient(135deg, var(--accent), var(--accent-secondary))"
           : "linear-gradient(135deg, var(--orange), var(--orange-secondary))";
@@ -792,28 +407,31 @@
     });
     loadNews();
 
-    // ------- Summarize (Fireworks only) --------
+    // ------- Summarize --------
     async function summ(payloadB64){
       const a = JSON.parse(ub64(payloadB64));
       currentArticle = a;
 
-      // đóng SSE cũ + spinner cũ
       try { sseSource?.close(); } catch {}
       stopSpinner();
-
-      // hủy deep-row trạng thái & ẩn nút deep (sẽ hiện lại sau khi tóm tắt xong)
       elDeepRow.style.display = "none";
 
-      // abort summarize trước đó
       try { summarizeController?.abort(); } catch {}
       summarizeController = new AbortController();
 
-      // Hiển thị tiêu đề bài viết
       elArticleTitle.textContent = a.title || "Untitled Article";
       elArticleTitle.style.display = "block";
 
       elSummary.classList.remove("empty");
       elSummary.textContent = "Summarizing…";
+
+      // NEW: auto-scroll tới ô phân tích khi bấm Summarize (mobile)
+      if (window.innerWidth <= 1024) {
+        document.querySelector('.col-summary').scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
 
       try{
         const r = await fetch("/api/summarize", {
@@ -825,7 +443,6 @@
         const j = await r.json();
         if(j.status==="success"){
           elSummary.innerHTML = mdToHtml(j.summary);
-          // sau khi có summary: hiện nút Deep Analysis để user bấm
           elDeepRow.style.display = "flex";
         }else{
           elSummary.textContent = "Failed: " + (j.message||"");
@@ -836,25 +453,14 @@
       }
     }
 
-    // ------- Deep Analysis (SSE; đè kết quả lên summary) --------
+    // ------- Deep Analysis (SSE) --------
     btnDeep.onclick = ()=>{
       if (!currentArticle) return;
-
-      // Ẩn nút để tránh bấm lại trong lúc chạy
       elDeepRow.style.display = "none";
-
-      // Bật status + spinner
       startSpinner("Preparing");
 
-      // FIX: Auto-scroll to summary on mobile when doing deep analysis
-      if (window.innerWidth <= 1024) {
-        document.querySelector('.col-summary').scrollIntoView({ 
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }
+      // REMOVED: không auto-scroll khi bấm Deep Analysis nữa
 
-      // đóng SSE cũ nếu có
       try { sseSource?.close(); } catch {}
       const params = new URLSearchParams({
         title: currentArticle.title || "",
@@ -867,24 +473,20 @@
         try{
           const msg = JSON.parse(e.data || "{}");
           if(msg.type === "stage"){
-            // map stage -> label gọn
             const stage = (msg.stage||"").toLowerCase();
-            if (stage === "init")              updateSpinner("Preparing");
+            if (stage === "init") updateSpinner("Preparing");
             else if (stage === "search_provider") updateSpinner("Searching");
-            else if (stage === "reranker")       updateSpinner("Reranking");
-            else if (stage === "llm_provider")   updateSpinner("Synthesizing analysis");
+            else if (stage === "reranker") updateSpinner("Reranking");
+            else if (stage === "llm_provider") updateSpinner("Synthesizing analysis");
             else updateSpinner("Working");
           }else if(msg.type === "done"){
             stopSpinner();
-            // Đè kết quả phân tích lên phần tóm tắt
             elSummary.innerHTML = mdToHtml(msg.analysis || "No analysis.");
-            // nút deep vẫn ẩn cho bài này; khi tóm tắt bài khác sẽ hiện lại
             try { sseSource?.close(); } catch {}
           }else if(msg.type === "error"){
             stopSpinner();
             elSummary.innerHTML += `<br/><span style="color:var(--orange)">Deep Analysis failed: ${escapeHtml(msg.message||"")}</span>`;
             try { sseSource?.close(); } catch {}
-            // Cho phép bấm lại nếu muốn
             elDeepRow.style.display = "flex";
           }
         }catch{}
@@ -893,7 +495,6 @@
         stopSpinner();
         elSummary.innerHTML += `<br/><span style="color:var(--orange)">Deep Analysis connection error.</span>`;
         try { sseSource?.close(); } catch {}
-        // Cho phép bấm lại
         elDeepRow.style.display = "flex";
       };
     };
