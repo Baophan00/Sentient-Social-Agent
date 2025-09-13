@@ -1,10 +1,12 @@
-import os, sys, json, logging, hashlib
-from typing import List, Any
+import os, sys, json, logging, hashlib, time
+from typing import List, Any, Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory, Response
+from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
+import importlib
+from functools import wraps
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 log = logging.getLogger("ssa.web")
@@ -19,31 +21,32 @@ SEARXNG_API_KEY       = os.getenv("SEARXNG_API_KEY", "").strip()
 JINA_API_KEY          = os.getenv("JINA_API_KEY", "").strip()
 OPENROUTER_API_KEY    = os.getenv("OPENROUTER_API_KEY", "").strip()
 ODS_MODEL             = os.getenv("ODS_MODEL", os.getenv("LITELLM_MODEL_ID", "openrouter/google/gemini-2.0-flash-001")).strip()
+ADMIN_TOKEN           = os.getenv("ADMIN_TOKEN", "").strip()
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 SRC_PATH = os.path.join(ROOT, "src")
 
-paths_to_add = [
-    ROOT,
-    SRC_PATH,
-    os.path.join(ROOT, "src", "agent"),
-    os.path.join(ROOT, "src", "agent", "agent_tools"),
-]
+paths_to_add = [ROOT, SRC_PATH, os.path.join(ROOT, "src", "agent"), os.path.join(ROOT, "src", "agent", "agent_tools")]
 for path in paths_to_add:
     if os.path.isdir(path) and path not in sys.path:
         sys.path.insert(0, path)
 
-SSA_News = None
-try:
-    try:
-        from src.agent.agent_tools.news import News as SSA_News
-    except ImportError:
-        from agent.agent_tools.news import News as SSA_News
-    except ImportError:
-        from agent_tools.news import News as SSA_News
+def _try_import_news():
+    for mod in ["src.agent.agent_tools.news", "agent.agent_tools.news", "agent_tools.news"]:
+        try:
+            m = importlib.import_module(mod)
+            return getattr(m, "News")
+        except ImportError:
+            continue
+        except Exception as e:
+            log.warning("Unexpected error importing %s: %s", mod, e)
+    return None
+
+SSA_News = _try_import_news()
+if SSA_News:
     log.info("SSA News available.")
-except Exception as e:
-    log.warning("SSA News not found: %s", e)
+else:
+    log.warning("SSA News not found")
 
 SummarizerService = None
 ods_runtime_snapshot_fn = None
@@ -101,7 +104,21 @@ def _ods_env_ready():
             missing.append("SERPER_API_KEY")
     return (len(missing) == 0, missing)
 
-app = Flask(__name__, static_url_path="", static_folder=".")
+# -------- Token helper: only enforce if ADMIN_TOKEN is set --------
+def _extract_token() -> str:
+    return (request.headers.get("X-Admin-Token", "") or request.args.get("token", "")).strip()
+
+def require_token_if_configured(fn: Callable):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if ADMIN_TOKEN:  # only enforce when configured
+            token = _extract_token()
+            if token != ADMIN_TOKEN:
+                return jsonify({"status": "error", "message": "unauthorized"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+app = Flask(__name__)
 CORS(app)
 
 news_agent = None
@@ -154,7 +171,11 @@ def _sse(payload: Any) -> str:
 
 @app.route("/")
 def root():
-    return send_from_directory(".", "news_dashboard.html")
+    return send_from_directory(ROOT, "news_dashboard.html")
+
+@app.route("/assets/<path:filename>")
+def assets(filename):
+    return send_from_directory(os.path.join(ROOT, "assets"), filename)
 
 @app.route("/api/news")
 def api_news():
@@ -173,6 +194,7 @@ def api_news():
         return jsonify({"status":"error","message":str(e)}), 500
 
 @app.route("/api/summarize", methods=["POST"])
+@require_token_if_configured
 def api_summarize():
     if summarizer is None:
         return jsonify({"status":"error","message":"Analyzer unavailable"}), 503
@@ -198,16 +220,32 @@ def api_summarize():
         log.error("Summarize failed: %s", e, exc_info=True)
         return jsonify({"status":"error","message": f"Summarization failed: {e}"}), 500
 
+_MAX_T = int(os.getenv("SSE_MAX_TITLE", "200"))
+_MAX_D = int(os.getenv("SSE_MAX_DESC",  "2000"))
+_MAX_U = int(os.getenv("SSE_MAX_URL",   "1024"))
+_last_sse = {}
+
+def _client_ip():
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "0.0.0.0").split(",")[0].strip()
+
 @app.route("/api/deep_analyze_sse")
+@require_token_if_configured
 def api_deep_analyze_sse():
-    title = str(request.args.get("title","")).strip()
-    desc  = str(request.args.get("description","")).strip()
-    link  = str(request.args.get("url","")).strip()
+    title = str(request.args.get("title",""))[:_MAX_T]
+    desc  = str(request.args.get("description",""))[:_MAX_D]
+    link  = str(request.args.get("url",""))[:_MAX_U]
     key = _hash_key("deep", title, desc, link)
     cache_path = CACHE_DIR / f"{key}.json"
+    ip = _client_ip()
+    now = time.time()
+    if now - _last_sse.get((ip, key), 0) < 4:
+        return Response(_sse({"type": "error", "message": "Too many requests; please wait."}),
+                        mimetype="text/event-stream",
+                        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+    _last_sse[(ip, key)] = now
     def stream():
         if cache_path.exists():
-            cached = json.loads(cache_path.read_text())
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
             yield _sse({"type":"done", "analysis": cached.get("analysis", "")})
             return
         modules = _check_ods_modules()
@@ -231,7 +269,7 @@ def api_deep_analyze_sse():
         yield _sse({"type":"stage","stage":"llm_provider","detail":"Synthesizing…"})
         try:
             result = summarizer.deep_analyze_only(title, desc, link)
-            cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False))
+            cache_path.write_text(json.dumps({"analysis": result}, ensure_ascii=False), encoding="utf-8")
             yield _sse({"type":"done","analysis": result})
         except Exception as e:
             yield _sse({"type":"error","message": f"Deep analysis failed: {e}"})
@@ -242,6 +280,7 @@ def api_deep_analyze_sse():
 
 @app.route("/api/status")
 def api_status():
+    # status mở, không yêu cầu token
     modules = _check_ods_modules()
     ready, missing = _ods_env_ready()
     return jsonify({
@@ -265,6 +304,7 @@ def api_status():
     })
 
 @app.route("/api/clear_cache", methods=["POST"])
+@require_token_if_configured
 def api_clear_cache():
     n = 0
     for p in CACHE_DIR.glob("*.json"):

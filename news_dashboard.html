@@ -4,13 +4,9 @@
   <meta charset="utf-8" />
   <title>Sentient Social Agent — News</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  
-  <!-- Favicon được tạo inline bằng SVG -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%23a8d86b'/><stop offset='100%25' stop-color='%2382c341'/></linearGradient></defs><circle cx='50' cy='50' r='50' fill='url(%23bg)'/><g transform='translate(50,50)'><circle cx='-12' cy='-5' r='8' fill='%23f4a261' stroke='%23000' stroke-width='2'/><circle cx='12' cy='-5' r='8' fill='%23f4a261' stroke='%23000' stroke-width='2'/><ellipse cx='0' cy='5' rx='15' ry='12' fill='%23fff' stroke='%23000' stroke-width='2'/><ellipse cx='0' cy='0' rx='18' ry='15' fill='%23f4a261' stroke='%23000' stroke-width='2'/><circle cx='-6' cy='-3' r='3' fill='%23000'/><circle cx='6' cy='-3' r='3' fill='%23000'/><circle cx='-5' cy='-2' r='1' fill='%23fff'/><circle cx='7' cy='-2' r='1' fill='%23fff'/><ellipse cx='0' cy='2' rx='2' ry='1' fill='%23000'/><path d='M -3 6 Q 0 9 3 6' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/><polygon points='-2,-18 0,-25 2,-18' fill='%23264653' stroke='%23000' stroke-width='1.5'/><ellipse cx='0' cy='-15' rx='12' ry='6' fill='%23264653' stroke='%23000' stroke-width='2'/><circle cx='0' cy='12' r='4' fill='%23e76f51'/></g></svg>" />
-  
-  <!-- Fallback cho các trình duyệt cũ -->
   <link rel="shortcut icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='bg' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%23a8d86b'/><stop offset='100%25' stop-color='%2382c341'/></linearGradient></defs><circle cx='50' cy='50' r='50' fill='url(%23bg)'/><g transform='translate(50,50)'><circle cx='-12' cy='-5' r='8' fill='%23f4a261' stroke='%23000' stroke-width='2'/><circle cx='12' cy='-5' r='8' fill='%23f4a261' stroke='%23000' stroke-width='2'/><ellipse cx='0' cy='5' rx='15' ry='12' fill='%23fff' stroke='%23000' stroke-width='2'/><ellipse cx='0' cy='0' rx='18' ry='15' fill='%23f4a261' stroke='%23000' stroke-width='2'/><circle cx='-6' cy='-3' r='3' fill='%23000'/><circle cx='6' cy='-3' r='3' fill='%23000'/><circle cx='-5' cy='-2' r='1' fill='%23fff'/><circle cx='7' cy='-2' r='1' fill='%23fff'/><ellipse cx='0' cy='2' rx='2' ry='1' fill='%23000'/><path d='M -3 6 Q 0 9 3 6' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/><polygon points='-2,-18 0,-25 2,-18' fill='%23264653' stroke='%23000' stroke-width='1.5'/><ellipse cx='0' cy='-15' rx='12' ry='6' fill='%23264653' stroke='%23000' stroke-width='2'/><circle cx='0' cy='12' r='4' fill='%23e76f51'/></g></svg>" />
-  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -34,18 +30,12 @@
       --blue: #007bff;
       --purple: #6f42c1;
       --yellow: #ffc107;
-
-      /* NEW: tăng rộng và cố định tối thiểu cho khung phải; thu nhỏ khung trái “một xíu” */
       --summary-min: 600px;
       --news-min: 440px;
-
-      /* NEW: dùng cùng một giới hạn chiều CAO cho 2 cột (giống news-scroll) */
       --col-max: calc(100vh - 160px);
     }
-    
     *{box-sizing:border-box}
     html,body{height:100%}
-    
     body{
       margin:0;
       background: linear-gradient(135deg, var(--bg) 0%, var(--bg-secondary) 100%);
@@ -55,7 +45,6 @@
       line-height: 1.5;
       font-weight: 400;
     }
-    
     .wrap{
       max-width:1600px;
       margin:0 auto;
@@ -64,183 +53,97 @@
       display: flex;
       flex-direction: column;
     }
-    
-    .main-content{
-      flex: 1;
-    }
-    
+    .main-content{ flex: 1; }
     header{
-      display:flex;
-      align-items:center;
-      gap:16px;
-      margin-bottom:24px;
-      padding: 16px 0;
+      display:flex; align-items:center; gap:16px;
+      margin-bottom:24px; padding: 16px 0;
       border-bottom: 1px solid var(--edge);
     }
-    
-    /* ANIMATED LOGO - NEW */
     .logo{
-      width:40px;
-      height:40px;
-      border-radius:12px;
+      width:40px;height:40px;border-radius:12px;
       background: conic-gradient(from 45deg, var(--accent), var(--blue) 30%, var(--purple) 60%, var(--orange) 90%, var(--accent));
       filter: saturate(1.2) brightness(1.1);
       box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-      position: relative;
-      overflow: hidden;
-      animation: logoGlow 4s ease-in-out infinite;
+      position: relative; overflow: hidden; animation: logoGlow 4s ease-in-out infinite;
     }
-    
-    .logo::before {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: linear-gradient(45deg, transparent 30%, rgba(255, 255, 255, 0.8) 50%, transparent 70%);
-      animation: logoScan 3s linear infinite;
-      transform-origin: center;
-    }
-    .logo::after {
-      content: '';
-      position: absolute;
-      top: -4px; left: -4px; right: -4px; bottom: -4px;
-      border: 2px solid var(--accent);
-      border-radius: 16px;
-      opacity: 0;
-      animation: logoPulse 2s ease-out infinite;
-    }
+    .logo::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:linear-gradient(45deg,transparent 30%,rgba(255,255,255,.8) 50%,transparent 70%);animation:logoScan 3s linear infinite;transform-origin:center}
+    .logo::after{content:'';position:absolute;top:-4px;left:-4px;right:-4px;bottom:-4px;border:2px solid var(--accent);border-radius:16px;opacity:0;animation:logoPulse 2s ease-out infinite}
     @keyframes logoScan { 0%{transform: translate(-100%, -100%) rotate(45deg)} 100%{transform: translate(100%, 100%) rotate(45deg)} }
     @keyframes logoPulse { 0%{transform: scale(1);opacity: .6} 50%{transform: scale(1.2);opacity:.2} 100%{transform: scale(1.4);opacity:0} }
     @keyframes logoGlow { 0%,100%{box-shadow:0 2px 8px rgba(40,167,69,.3);filter:saturate(1.2) brightness(1.1)} 50%{box-shadow:0 4px 16px rgba(40,167,69,.5),0 0 20px rgba(0,123,255,.3);filter:saturate(1.4) brightness(1.3)} }
-    
     h1{
-      font-size:28px;
-      font-weight:700;
-      margin:0;
+      font-size:28px;font-weight:700;margin:0;
       background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
-    
     .x-icon { width:32px;height:32px;background:linear-gradient(135deg,#1da1f2 0%,#0d8bd9 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .3s cubic-bezier(.4,0,.2,1);text-decoration:none;box-shadow:0 2px 8px rgba(29,161,242,.3);position:relative;overflow:hidden }
     .x-icon::before { content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transition:left .6s ease }
     .x-icon:hover { transform:translateY(-2px) scale(1.05);box-shadow:0 6px 16px rgba(29,161,242,.4) }
     .x-icon:hover::before { left:100% }
     .x-icon svg { width:16px;height:16px;fill:#fff;transition:transform .3s ease }
     .x-icon:hover svg { transform:scale(1.1) }
-    
     .pill{ font-size:12px;font-weight:600;padding:6px 12px;border:1px solid var(--edge);border-radius:16px;color:var(--text-secondary);background:var(--panel);margin-left:auto }
-    
-    /* layout - Chỉnh tỉ lệ cột: trái nhỏ hơn, phải rộng hơn + có min-width ổn định */
     .layout{
-      display:grid;
-      grid-template-columns: minmax(var(--news-min), 1.1fr) minmax(var(--summary-min), 0.9fr);
-      gap:24px;
-      align-items:start;
-      min-height: calc(100vh - 200px);
+      display:grid; grid-template-columns: minmax(var(--news-min), 1.1fr) minmax(var(--summary-min), 0.9fr);
+      gap:24px; align-items:start; min-height: calc(100vh - 200px);
     }
     @media (max-width:1024px){ .layout{grid-template-columns:1fr} }
-    
     .card{ background:var(--panel);border:1px solid var(--edge);border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08),0 1px 4px rgba(0,0,0,.04);overflow:hidden;transition:all .3s cubic-bezier(.4,0,.2,1);width:100% }
     .card:hover{ transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.12),0 2px 8px rgba(40,167,69,.1);border-color:var(--accent) }
     .card .hd{ padding:16px 20px;border-bottom:1px solid var(--edge);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(40,167,69,.05) 0%,rgba(0,123,255,.03) 100%) }
     .card .hd h2{ font-size:16px;font-weight:600;margin:0;color:var(--text);letter-spacing:.5px }
     .card .bd{ padding:16px }
-    
     .news-wrap{ display:flex;flex-direction:column;gap:24px;width:100% }
-    
     .tabs{ display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 12px }
     .tab{ padding:8px 16px;border:1px solid var(--edge);border-radius:20px;color:var(--muted);cursor:pointer;user-select:none;font-weight:500;font-size:13px;transition:all .2s ease;background:var(--card) }
     .tab:hover{ color:var(--text-secondary);border-color:var(--accent);background:rgba(40,167,69,.08) }
     .tab.active{ color:#fff;background:linear-gradient(135deg,var(--accent) 0%,var(--accent-secondary) 100%);border-color:transparent;font-weight:600;box-shadow:0 2px 8px rgba(40,167,69,.3) }
-    
     .news-scroll{
-      padding:12px;
-      max-height: var(--col-max);
-      overflow:auto;
-      scrollbar-width: thin;
-      scrollbar-color: var(--accent) var(--panel);
+      padding:12px; max-height: var(--col-max); overflow:auto; scrollbar-width: thin; scrollbar-color: var(--accent) var(--panel);
     }
     .news-scroll::-webkit-scrollbar { width:6px }
     .news-scroll::-webkit-scrollbar-track { background:var(--panel-secondary);border-radius:3px }
     .news-scroll::-webkit-scrollbar-thumb { background:var(--accent);border-radius:3px }
     @media (max-width:1024px){ .news-scroll{ max-height:none;overflow:visible } }
-    
     .news-item{
       padding:12px;border:1px solid var(--edge);border-radius:8px;background:var(--card);margin:8px 0;display:grid;grid-template-columns:auto 160px;gap:12px;transition:all .3s ease;position:relative;overflow:hidden;width:100%
     }
     .news-item::before{ content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent) 0%,var(--blue) 50%,var(--purple) 100%);opacity:0;transition:opacity .3s ease }
     .news-item:hover{ border-color:var(--accent);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08);background:var(--card-hover) }
-    .news-item:hover::before{ opacity:1 }
     .news-item h3{ margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text);line-height:1.4 }
     .news-meta{ font-size:12px;color:var(--muted);font-weight:500 }
-    
     .btn{ cursor:pointer;border:1px solid var(--edge);background:var(--card);color:var(--text-secondary);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;transition:all .2s ease;text-decoration:none;display:inline-block;text-align:center }
     .btn:hover{ border-color:var(--accent);background:rgba(40,167,69,.08);color:var(--text);transform:translateY(-1px) }
     .btn.accent{ border:none;background:linear-gradient(135deg,var(--accent) 0%,var(--accent-secondary) 100%);color:#fff;font-weight:700;box-shadow:0 2px 8px rgba(40,167,69,.3) }
     .btn.accent:hover{ background:linear-gradient(135deg,var(--accent-hover) 0%,var(--accent) 100%);box-shadow:0 4px 12px rgba(40,167,69,.4);transform:translateY(-2px) }
-    
     .col-summary .card{ position:sticky;top:20px }
     .summary-box{ display:flex;gap:16px;align-items:flex-start }
     .mascot{ width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--card) 0%,var(--panel) 100%);border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;box-shadow:0 2px 8px rgba(0,0,0,.1) }
     .mascot img{ width:100%;height:100%;object-fit:cover }
-    
-    /* Tiêu đề bài viết trong khung phân tích */
     .article-title{
       font-size:15px;font-weight:700;color:var(--accent);margin-bottom:12px;padding:10px 12px;
       background:linear-gradient(135deg,rgba(40,167,69,.08) 0%,rgba(0,123,255,.04) 100%);
       border-radius:6px;border-left:3px solid var(--accent);line-height:1.4
     }
     .summary-content{ white-space:pre-wrap;font-size:14px;color:var(--text-secondary);flex:1;min-height:140px;line-height:1.6 }
-    
-    /* NEW: Chỉ ô phân tích cuộn và không kéo chiều cao vượt quá News */
-    .summary-scroll{
-      max-height: var(--col-max);
-      overflow: auto;
-      padding-right: 4px; /* tránh che chữ bởi scrollbar trên vài OS */
-      scrollbar-width: thin;
-      scrollbar-color: var(--accent) var(--panel);
-    }
+    .summary-scroll{ max-height: var(--col-max); overflow: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--accent) var(--panel) }
     .summary-scroll::-webkit-scrollbar { width:6px }
     .summary-scroll::-webkit-scrollbar-track { background:var(--panel-secondary);border-radius:3px }
     .summary-scroll::-webkit-scrollbar-thumb { background:var(--accent);border-radius:3px }
     @media (max-width:1024px){ .summary-scroll{ max-height:none;overflow:visible } }
-    /* END NEW */
-    
-    /* WIDTH FIX: chặn nở ngang theo nội dung dài/URL */
     .layout > .news-wrap, .layout > .col-summary { min-width:0 }
     .summary-box > div { min-width:0 }
     .summary-content, .news-item h3, .news-meta { overflow-wrap:anywhere; word-break:break-word; max-width:100% }
     .summary-content a { word-break:break-all }
-    
     .empty{ color:var(--muted);font-style:italic }
     .cta-row{ margin-top:12px;display:flex;gap:10px }
     .status-line{ margin-top:12px;font-size:13px;color:var(--muted);font-style:italic;user-select:none;padding:8px 12px;background:rgba(40,167,69,.08);border-radius:6px;border-left:3px solid var(--accent) }
-    
     .footer { margin-top:40px;padding:24px 0 16px;border-top:1px solid var(--edge);text-align:center }
     .footer-link { display:inline-flex;align-items:center;gap:8px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;padding:8px 16px;border-radius:20px;transition:all .3s cubic-bezier(.4,0,.2,1);background:rgba(40,167,69,.05);border:1px solid rgba(40,167,69,.2);position:relative;overflow:hidden }
     .footer-link::before { content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(40,167,69,.1),transparent);transition:left .6s ease }
     .footer-link:hover { color:var(--accent);border-color:var(--accent);background:rgba(40,167,69,.1);transform:translateY(-1px);box-shadow:0 4px 12px rgba(40,167,69,.2) }
-    .footer-link:hover::before { left:100% }
     .lightning-icon { display:inline-block;animation:lightning 2s ease-in-out infinite }
     @keyframes lightning { 0%,100%{transform:scale(1);filter:brightness(1)} 50%{transform:scale(1.1);filter:brightness(1.3)} }
-    
-    @media (max-width: 768px) {
-      .wrap { padding:16px 20px }
-      h1 { font-size:24px }
-      .x-icon { width:28px;height:28px }
-      .x-icon svg { width:14px;height:14px }
-      .news-item { grid-template-columns:1fr;gap:12px }
-      .tabs { padding:0 12px 8px }
-      .tab { padding:6px 12px;font-size:12px }
-      .article-title { font-size:14px;padding:10px 14px }
-      .footer { margin-top:24px;padding:16px 0 12px }
-      .footer-link { font-size:12px;padding:6px 12px }
-      .news-card, .col-summary .card { min-height:auto }
-    }
   </style>
 </head>
 <body>
@@ -254,9 +157,7 @@
         </a>
         <span class="pill" id="status-pill">checking…</span>
       </header>
-
       <div class="layout">
-        <!-- Left - News Section -->
         <div class="news-wrap">
           <div class="card news-card">
             <div class="hd">
@@ -272,8 +173,6 @@
             <div class="news-scroll" id="news-list"></div>
           </div>
         </div>
-
-        <!-- Right - Summary Section -->
         <div class="col-summary">
           <div class="card">
             <div class="hd"><h2>🧠 Summary & Analysis</h2></div>
@@ -281,7 +180,6 @@
               <div class="summary-box">
                 <div class="mascot"><img src="assets/mascot.png" alt="mascot" /></div>
                 <div style="flex:1;min-width:0">
-                  <!-- NEW: bọc nội dung phân tích vào vùng cuộn -->
                   <div class="summary-scroll">
                     <div id="article-title" class="article-title" style="display:none"></div>
                     <div id="summary" class="summary-content empty">Pick a news item and click "Summarize".</div>
@@ -290,25 +188,24 @@
                     </div>
                     <div id="deep-status" class="status-line" style="display:none"></div>
                   </div>
-                  <!-- /summary-scroll -->
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div> <!-- layout -->
-    </div> <!-- main-content -->
-    
-    <!-- FOOTER -->
+      </div>
+    </div>
     <footer class="footer">
       <a href="https://www.sentient.xyz/builder-suite" target="_blank" rel="noopener noreferrer" class="footer-link">
         <span class="lightning-icon">⚡</span>
         Powered by Sentient Open-Source AI Ecosystem
       </a>
     </footer>
-  </div> <!-- wrap -->
-
+  </div>
   <script>
+    // ===== Token cấu hình cho API (đồng bộ với .env) =====
+    const ADMIN_TOKEN = "abc211193";
+
     const $ = (q) => document.querySelector(q);
     const elNews = $("#news-list");
     const elSummary = $("#summary");
@@ -317,23 +214,19 @@
     const btnDeep = $("#btn-deep");
     const elDeepStatus = $("#deep-status");
     const statusPill = $("#status-pill");
-
     let currentArticle = null;
     let summarizeController = null;
     let sseSource = null;
     let spinnerTimer = null;
+    let spinnerActive = false; // flag rõ ràng để biết spinner đang chạy
 
     function formatTimeUTC(isoString) {
       const date = new Date(isoString);
-      return date.toLocaleString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false,
-        timeZone: 'UTC'
-      }) + ' UTC';
+      return date.toLocaleString('en-US', {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC'}) + ' UTC';
     }
-
     function startSpinner(label){
       stopSpinner();
+      spinnerActive = true;
       let dots = 0;
       elDeepStatus.textContent = label + "…";
       elDeepStatus.style.display = "block";
@@ -343,33 +236,32 @@
       }, 400);
     }
     function updateSpinner(label){
+      if(!spinnerActive) return;
       if(elDeepStatus.style.display !== "block") elDeepStatus.style.display = "block";
       elDeepStatus.textContent = label + "…";
     }
     function stopSpinner(){
+      spinnerActive = false;
       if (spinnerTimer){ clearInterval(spinnerTimer); spinnerTimer = null; }
       elDeepStatus.style.display = "none";
       elDeepStatus.textContent = "";
     }
-
     async function status(){
       try{
-        const r = await fetch("/api/status"); const j = await r.json();
+        const r = await fetch("/api/status");
+        const j = await r.json();
         const ok = j?.status === "ok";
         statusPill.textContent = ok ? "online" : "error";
         statusPill.style.color = "#fff";
-        statusPill.style.background = ok
-          ? "linear-gradient(135deg, var(--accent), var(--accent-secondary))"
-          : "linear-gradient(135deg, var(--orange), var(--orange-secondary))";
+        statusPill.style.background = ok ? "linear-gradient(135deg, var(--accent), var(--accent-secondary))" : "linear-gradient(135deg, var(--orange), var(--orange-secondary))";
         statusPill.style.borderColor = ok ? "var(--accent)" : "var(--orange)";
-      }catch{ 
+      }catch{
         statusPill.textContent = "offline";
         statusPill.style.background = "linear-gradient(135deg, var(--orange), var(--orange-secondary))";
       }
     }
     status();
 
-    // ------- News --------
     let currentCat = "";
     async function loadNews(){
       elNews.innerHTML = `<div class="empty">Loading news…</div>`;
@@ -394,8 +286,18 @@
         elNews.innerHTML = `<div class="empty">Failed to load news.</div>`;
       }
     }
-    function b64(s){return btoa(unescape(encodeURIComponent(s)))}
-    function ub64(s){return decodeURIComponent(escape(atob(s)))}
+    function b64(s){
+      const enc = new TextEncoder().encode(String(s));
+      let bin = "";
+      enc.forEach(b => bin += String.fromCharCode(b));
+      return btoa(bin);
+    }
+    function ub64(s){
+      const bin = atob(s);
+      const bytes = new Uint8Array(bin.length);
+      for (let i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
     function escapeHtml(s){return (s||"").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
     document.querySelectorAll(".tab").forEach(tab=>{
       tab.onclick = ()=>{
@@ -407,36 +309,28 @@
     });
     loadNews();
 
-    // ------- Summarize --------
     async function summ(payloadB64){
       const a = JSON.parse(ub64(payloadB64));
       currentArticle = a;
-
       try { sseSource?.close(); } catch {}
       stopSpinner();
       elDeepRow.style.display = "none";
-
       try { summarizeController?.abort(); } catch {}
       summarizeController = new AbortController();
-
-      elArticleTitle.textContent = a.title || "Untitled Article";
+      elArticleTitle.textContent = escapeHtml(a.title || "Untitled Article");
       elArticleTitle.style.display = "block";
-
       elSummary.classList.remove("empty");
       elSummary.textContent = "Summarizing…";
-
-      // NEW: auto-scroll tới ô phân tích khi bấm Summarize (mobile)
       if (window.innerWidth <= 1024) {
-        document.querySelector('.col-summary').scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
+        document.querySelector('.col-summary').scrollIntoView({behavior: 'smooth', block: 'start'});
       }
-
       try{
         const r = await fetch("/api/summarize", {
           method:"POST",
-          headers:{"Content-Type":"application/json"},
+          headers:{
+            "Content-Type":"application/json",
+            "X-Admin-Token": ADMIN_TOKEN
+          },
           body: JSON.stringify({ title:a.title, description:a.summary, url:a.link }),
           signal: summarizeController.signal
         });
@@ -453,45 +347,70 @@
       }
     }
 
-    // ------- Deep Analysis (SSE) --------
     btnDeep.onclick = ()=>{
       if (!currentArticle) return;
       elDeepRow.style.display = "none";
       startSpinner("Preparing");
-
-      // REMOVED: không auto-scroll khi bấm Deep Analysis nữa
-
       try { sseSource?.close(); } catch {}
+
       const params = new URLSearchParams({
         title: currentArticle.title || "",
         description: currentArticle.summary || "",
-        url: currentArticle.link || ""
+        url: currentArticle.link || "",
+        token: ADMIN_TOKEN
       });
+
       sseSource = new EventSource(`/api/deep_analyze_sse?${params.toString()}`);
 
+      // Fallback: tự dừng spinner nếu quá 60s chưa có "done"/"error"
+      const sseTimeout = setTimeout(()=>{
+        if (spinnerActive) {
+          console.warn("Deep analysis timeout (60s). Stopping spinner.");
+          stopSpinner();
+          elDeepRow.style.display = "flex";
+          try { sseSource?.close(); } catch {}
+        }
+      }, 60000);
+
       sseSource.onmessage = (e)=>{
+        // Log thô để debug khi parse lỗi
+        console.debug("SSE raw:", e.data);
         try{
           const msg = JSON.parse(e.data || "{}");
           if(msg.type === "stage"){
             const stage = (msg.stage||"").toLowerCase();
             if (stage === "init") updateSpinner("Preparing");
+            else if (stage === "diag") updateSpinner("Diagnostics");
+            else if (stage === "config") updateSpinner("Configuring");
             else if (stage === "search_provider") updateSpinner("Searching");
             else if (stage === "reranker") updateSpinner("Reranking");
             else if (stage === "llm_provider") updateSpinner("Synthesizing analysis");
             else updateSpinner("Working");
           }else if(msg.type === "done"){
+            clearTimeout(sseTimeout);
             stopSpinner();
             elSummary.innerHTML = mdToHtml(msg.analysis || "No analysis.");
             try { sseSource?.close(); } catch {}
           }else if(msg.type === "error"){
+            clearTimeout(sseTimeout);
             stopSpinner();
             elSummary.innerHTML += `<br/><span style="color:var(--orange)">Deep Analysis failed: ${escapeHtml(msg.message||"")}</span>`;
             try { sseSource?.close(); } catch {}
             elDeepRow.style.display = "flex";
+          }else{
+            // Không xác định → log để theo dõi
+            console.debug("SSE unknown message:", msg);
           }
-        }catch{}
+        }catch(err){
+          console.error("Parse SSE error:", err, e.data);
+          // Không auto-stop ở đây (tránh stop khi stage gửi nhanh),
+          // chỉ stop nếu sau đó timeout 60s không có done/error.
+        }
       };
-      sseSource.onerror = ()=>{
+
+      sseSource.onerror = (e)=>{
+        clearTimeout(sseTimeout);
+        console.error("SSE connection error:", e);
         stopSpinner();
         elSummary.innerHTML += `<br/><span style="color:var(--orange)">Deep Analysis connection error.</span>`;
         try { sseSource?.close(); } catch {}
@@ -500,13 +419,14 @@
     };
 
     function mdToHtml(md){
-      let h = (md||"")
+      const esc = (md||"").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+      let h = esc
         .replace(/^(\s*)- (.*)$/gm,'$1• $2')
         .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
         .replace(/_(.+?)_/g,'<i>$1</i>')
         .replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
         .replace(/\n/g,"<br/>");
-      return h;
+      return DOMPurify.sanitize(h, {ALLOWED_TAGS:['b','i','a','br'], ALLOWED_ATTR:['href','target','rel']});
     }
   </script>
 </body>

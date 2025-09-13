@@ -39,7 +39,6 @@ OA_SUMMARY_PRES_PEN    = float(os.getenv("OA_SUMMARY_PRESENCE_PENALTY",  "0.0"))
 OA_SUMMARY_MAX_TOKENS  = int(os.getenv("OA_SUMMARY_MAX_TOKENS",    "700"))
 
 DIV = "────────────────────────────────"
-BUL = "•"
 
 def _to_dictish(x):
     try:
@@ -151,15 +150,15 @@ SUMMARY_PROMPT_TEMPLATE = (
 )
 
 ODS_ANALYSIS_PROMPT = (
-    "Deeply analyze this news item. If a link is provided, consult it and corroborate with search. "
-    "Return a single clean card with these sections. Do NOT use '#', '##', or '###' headers.\n\n"
-    "Sections and rules:\n"
+    "Deeply analyze this news item. If a link is provided, try to consult it and corroborate with search; "
+    "if the link is unreachable or empty, proceed using only the title/description and public context. "
+    "Return a single clean card. Do NOT use '#', '##', or '###' headers.\n\n"
     "- Summary: 3–5 bullets (start with '• '), focus on causes, context, second-order effects.\n"
-    "- Why it matters: 2 bullets (start with '• '), relevance for users/investors/builders.\n"
+    "- Why it matters: 2 bullets (start with '• ').\n"
     "- Risks: one bullet (start with '• ').\n"
     "- Opportunities: one bullet (start with '• ').\n"
     "- Market view: one line starting with 'Market — '.\n"
-    "- Sources: list 1–3 most relevant URLs used or corroborated.\n\n"
+    "- Sources: list 1–3 URLs used; if none accessible, write 'Sources: N/A'.\n\n"
     "Keep it factual, neutral, and compact. No code fences.\n\n"
     "Title: {title}\n"
     "Description: {description}\n"
@@ -275,9 +274,7 @@ def _ods_deep_analysis(title: str, description: str, link: str, on_stage: Option
         for st in ("init","search_provider","reranker","llm_provider"):
             try: on_stage(st)
             except Exception: pass
-    kwargs = {
-        "model_name": (ODS_MODEL or "openrouter/google/gemini-2.0-flash-001")
-    }
+    kwargs = {"model_name": (ODS_MODEL or "openrouter/google/gemini-2.0-flash-001")}
     if snap["reranker"] == "jina":
         kwargs["reranker"] = "jina"
     if snap["search_provider"] == "searxng" and SEARXNG_INSTANCE_URL:
@@ -336,8 +333,26 @@ class SummarizerService:
             log.info("[CACHE] analysis hit")
             return hit
         txt = _ods_deep_analysis(title, description, link)
-        if not txt:
-            raise RuntimeError("Deep analysis unavailable (check ODS env / provider credentials / search key).")
+        refuse = txt.strip().lower().startswith(("i am sorry","sorry","cannot fulfill","cannot perform")) if txt else False
+        if not txt or refuse:
+            minimal = (
+                f"**Summary**\n"
+                f"• {title or 'Untitled'}\n"
+                f"• {(description[:160] + ('…' if len(description)>160 else '')) if description else 'No description'}\n"
+                f"• Link provided: {'yes' if link else 'no'}\n\n"
+                f"**Why it matters**\n"
+                f"• Provides context despite missing source access.\n"
+                f"• Replace with a real article URL to improve accuracy.\n\n"
+                f"**Risks**\n"
+                f"• Limited confidence without corroborating sources.\n\n"
+                f"**Opportunities**\n"
+                f"• Use real sources to unlock deeper insights.\n\n"
+                f"Market — No view without sources.\n"
+                f"Sources: N/A"
+            )
+            card = _ensure_card(summary_block="", analysis_block=minimal, link=link)
+            _cache_save(key, card)
+            return card
         card = _ensure_card(summary_block="", analysis_block=txt, link=link)
         _cache_save(key, card)
         return card
@@ -360,16 +375,20 @@ class SummarizerService:
                     log.warning("OpenAI error (summary): %s", e)
             if summary_block:
                 _cache_save(s_key, summary_block)
+
         a_key = _cache_key("analysis", title, description, link)
         analysis_block = _cache_load(a_key, DEEP_CACHE_TTL) or ""
         if not analysis_block:
             try:
                 a = _ods_deep_analysis(title, description, link)
-                if a: analysis_block = _ensure_card("", a, link=link)
+                if a:
+                    analysis_block = _ensure_card("", a, link=link)
             except Exception as e:
                 log.warning("ODS error (analysis): %s", e)
-            if analysis_block:
-                _cache_save(a_key, analysis_block)
+            if not analysis_block:
+                analysis_block = _ensure_card("", "Sources: N/A\nMarket — No view.", link=link)
+            _cache_save(a_key, analysis_block)
+
         if not summary_block and not analysis_block:
             raise RuntimeError("No summarizer/analyzer available")
         return "\n\n".join([b for b in [summary_block, analysis_block] if b.strip()])
@@ -378,7 +397,9 @@ class NewsAgent:
     def __init__(self, model: Optional[str] = None):
         self.model = (model or FIREWORKS_MODEL).strip()
         self.summarizer = SummarizerService(fireworks_model=self.model)
+
     def get_news(self, feeds: List[str], limit: int = 20) -> List[dict]:
         return []
+
     def summarize(self, title: str, description: str, link: str) -> str:
         return self.summarizer.summarize_and_analyze(title, description, link)
